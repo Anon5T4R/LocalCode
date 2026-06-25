@@ -6,6 +6,49 @@ interface FileExplorerProps {
   onOpenFile: (path: string) => void;
 }
 
+function getFileIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  const file = name.toLowerCase();
+  if (file === "package.json") return "📦";
+  if (file === "tsconfig.json") return "⚙️";
+  if (file === ".gitignore" || file === ".gitattributes" || file === ".gitmodules") return "🐙";
+  if (file === "dockerfile") return "🐋";
+  if (file === "makefile") return "🔨";
+  if (file === "readme.md") return "📖";
+
+  switch (ext) {
+    case "js": return "🟨";
+    case "jsx": return "⚛️";
+    case "ts": return "🔵";
+    case "tsx": return "⚛️";
+    case "rs": return "🦀";
+    case "py": return "🐍";
+    case "json": return "📋";
+    case "html": return "🌐";
+    case "css": return "🎨";
+    case "scss": case "sass": case "less": return "🎨";
+    case "md": return "📝";
+    case "yaml": case "yml": return "⚙️";
+    case "toml": return "⚙️";
+    case "c": return "🔵";
+    case "cpp": case "cxx": case "cc": return "🔷";
+    case "h": case "hpp": return "🔷";
+    case "go": return "🔷";
+    case "java": return "☕";
+    case "rb": return "💎";
+    case "php": return "🐘";
+    case "sh": case "bash": case "zsh": return "💻";
+    case "ps1": return "💻";
+    case "bat": case "cmd": return "💻";
+    case "sql": return "🗃️";
+    case "svg": case "png": case "jpg": case "jpeg": case "gif": case "ico": return "🖼️";
+    case "pdf": return "📕";
+    case "txt": return "📄";
+    case "csv": case "tsv": return "📊";
+    default: return "📄";
+  }
+}
+
 export const FileExplorer = memo(function FileExplorer({
   rootPath,
   onOpenFile,
@@ -166,7 +209,7 @@ export const FileExplorer = memo(function FileExplorer({
             onContextMenu={(e) => handleContextMenu(e, entry.path)}
           >
             <span className="explorer-icon">
-              {entry.is_dir ? (isExpanded ? "▼" : "▶") : "📄"}
+              {entry.is_dir ? (isExpanded ? "▼" : "▶") : getFileIcon(entry.name)}
             </span>
             {renaming === entry.path ? (
               <input
