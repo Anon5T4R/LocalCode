@@ -848,6 +848,24 @@ fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+fn save_session(app: tauri::AppHandle, data: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("session.json"), &data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn load_session(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("session.json");
+    if path.exists() {
+        std::fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
+    } else {
+        Ok(None)
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -1314,6 +1332,8 @@ pub fn run() {
             install_lsp_server,
             get_startup_file,
             exit_app,
+            save_session,
+            load_session,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

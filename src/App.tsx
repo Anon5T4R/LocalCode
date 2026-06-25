@@ -16,6 +16,7 @@ import { LspSetupPanel } from "./lsp-setup/LspSetupPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { readFile, writeFile, extToLanguage } from "./lib/fs";
 import { getBranches } from "./lib/git";
+import { saveSession, loadSession } from "./lib/session";
 import type { Tab } from "./types";
 import "./App.css";
 
@@ -165,14 +166,38 @@ function App() {
     }
   }, []);
 
-  // ---- Startup file from command line or second instance ----
-  const openedStartup = useRef(false);
+  // ---- Restore session on first mount ----
+  const restored = useRef(false);
   useEffect(() => {
-    if (openedStartup.current) return;
-    openedStartup.current = true;
-    invoke<string | null>("get_startup_file")
-      .then((p) => { if (p) openFile(p); })
-      .catch(() => {});
+    if (restored.current) return;
+    restored.current = true;
+    loadSession().then((s) => {
+      if (!s) return;
+      // If a startup file was passed via CLI, skip session restore
+      invoke<string | null>("get_startup_file").then((p) => {
+        if (p) { openFile(p); return; }
+        // Restore session
+        if (s.rootPath) setRootPath(s.rootPath);
+        if (s.tabs.length === 0) return;
+        Promise.all(
+          s.tabs.map(async (t) => {
+            if (!t.path) return newTab();
+            try {
+              const content = await readFile(t.path);
+              return newTab(t.path, content);
+            } catch {
+              return newTab(t.path);
+            }
+          })
+        ).then((restoredTabs) => {
+          const valid = restoredTabs.filter(Boolean) as Tab[];
+          if (valid.length === 0) return;
+          setTabs(valid);
+          const active = valid.find((t) => t.id === s.activeId) || valid[0];
+          setActiveId(active.id);
+        });
+      });
+    });
     const un = listen<string>("open-file", (e) => {
       if (e.payload) openFile(e.payload);
     });
@@ -194,6 +219,23 @@ function App() {
     });
     return () => { unlistenPromise.then((un) => un()); };
   }, []);
+
+  // ---- Auto-save session ----
+  const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (sessionTimer.current) clearTimeout(sessionTimer.current);
+    sessionTimer.current = setTimeout(() => {
+      const tbs = tabsRef.current;
+      const id = activeIdRef.current;
+      if (tbs.length === 1 && !tbs[0].path && !tbs[0].dirty) return;
+      saveSession({
+        rootPath: rootPath,
+        tabs: tbs.map((t) => ({ path: t.path })),
+        activeId: id,
+      });
+    }, 500);
+    return () => { if (sessionTimer.current) clearTimeout(sessionTimer.current); };
+  }, [rootPath, tabs, activeId]);
 
   // ---- Keyboard shortcuts ----
   useEffect(() => {
