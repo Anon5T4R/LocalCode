@@ -11,7 +11,7 @@ function getFileIcon(name: string): string {
   const file = name.toLowerCase();
   if (file === "package.json") return "📦";
   if (file === "tsconfig.json") return "⚙️";
-  if (file === ".gitignore" || file === ".gitattributes" || file === ".gitmodules") return "🐙";
+  if (file === ".gitignore" || file === ".gitattributes" || file === ".gitmodules") return "🐱";
   if (file === "dockerfile") return "🐋";
   if (file === "makefile") return "🔨";
   if (file === "readme.md") return "📖";
