@@ -37,3 +37,12 @@ jobs:
             src-tauri/target/release/LocalCode*
             !**/*.d
             !**/*.pdb
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: LocalCode ${{ github.ref_name }}
+          body: "Build automático do ${{ github.ref_name }}."
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
