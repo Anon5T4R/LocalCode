@@ -1,1 +1,2 @@
 *.rs linguist-language=Rust
+*.{js,ts,tsx,css,html,json} linguist-detectable=false
