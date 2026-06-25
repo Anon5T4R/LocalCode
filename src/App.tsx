@@ -127,8 +127,9 @@ function App() {
   }, []);
 
   const closeAllTabs = useCallback(() => {
-    setTabs([newTab()]);
-    setActiveId("");
+    const t = newTab();
+    setTabs([t]);
+    setActiveId(t.id);
   }, []);
 
   const closeTab = useCallback((id: string) => {
@@ -140,8 +141,9 @@ function App() {
     const remaining = tabsRef.current.filter((x) => x.id !== id);
 
     if (remaining.length === 0) {
-      setTabs([newTab()]);
-      setActiveId("");
+      const t = newTab();
+      setTabs([t]);
+      setActiveId(t.id);
       return;
     }
     if (id === activeIdRef.current) {

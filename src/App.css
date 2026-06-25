@@ -189,6 +189,16 @@ html, body, #root {
   color: var(--text-primary);
 }
 
+.action-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.action-btn:disabled:hover {
+  background: none;
+  color: var(--text-secondary);
+}
+
 /* ---- Workspace ---- */
 .workspace {
   display: flex;
