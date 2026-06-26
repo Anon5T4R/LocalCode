@@ -28,6 +28,17 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Download llama-server
+        run: |
+          curl -sL "$url" -o "$env:TEMP\llama.zip"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $a = [System.IO.Compression.ZipFile]::OpenRead("$env:TEMP\llama.zip")
+          New-Item -ItemType Directory -Path "src-tauri\binaries\llama" -Force
+          foreach ($e in $a.Entries) { if ($e.Name) { [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, "src-tauri\binaries\llama\$($e.Name)", $true) } }
+          $a.Dispose()
+        env:
+          url: https://github.com/ggml-org/llama.cpp/releases/download/b9802/llama-b9802-bin-win-cpu-x64.zip
+
       - name: Build
         run: npm run tauri build
 

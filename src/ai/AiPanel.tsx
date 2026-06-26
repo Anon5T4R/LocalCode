@@ -25,8 +25,7 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
   const [toolHistory, setToolHistory] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const [llamaServerOk, setLlamaServerOk] = useState<boolean | null>(null);
-  const [downloading, setDownloading] = useState(false);
+
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,30 +42,6 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
     const interval = setInterval(refreshStatus, 5000);
     return () => clearInterval(interval);
   }, [refreshStatus]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("check_llama_server");
-        setLlamaServerOk(true);
-      } catch {
-        setLlamaServerOk(false);
-      }
-    })();
-  }, []);
-
-  const handleDownloadServer = useCallback(async () => {
-    setDownloading(true);
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("download_llama_server");
-      setLlamaServerOk(true);
-    } catch (e: any) {
-      setMessages((prev) => [...prev, { role: "user", content: `Erro ao baixar llama-server: ${e.message || e}` }]);
-    }
-    setDownloading(false);
-  }, []);
 
   const handleBrowseModels = useCallback(async () => {
     try {
@@ -233,18 +208,6 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
         <div className="ai-config">
           <h3>Configurar IA Local</h3>
 
-          {llamaServerOk === false && (
-            <div className="ai-llama-missing">
-              <p>🚀 O runtime llama-server não foi encontrado.</p>
-              <p className="ai-llama-hint">Necessário para rodar modelos de IA localmente (~150 MB).</p>
-              <button className="ai-download-btn" onClick={handleDownloadServer} disabled={downloading}>
-                {downloading ? "Baixando..." : "📥 Baixar llama-server"}
-              </button>
-            </div>
-          )}
-
-          {llamaServerOk !== false && (
-            <>
           <label>Pasta dos modelos (.gguf)</label>
           <div className="ai-input-row">
             <input value={modelDir} onChange={(e) => setModelDir(e.target.value)} />
@@ -269,8 +232,6 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
               <span>🟢 Rodando: {status.model.split(/[\\/]/).pop()}</span>
               <button onClick={handleStopLlm}>Parar</button>
             </div>
-          )}
-            </>
           )}
         </div>
       </div>
