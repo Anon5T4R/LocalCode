@@ -6,6 +6,7 @@ export interface Settings {
   ngl: number;
   ctx: number;
   locale: "pt" | "en";
+  githubClientId: string;
 }
 
 const DEFAULTS: Settings = {
@@ -14,6 +15,7 @@ const DEFAULTS: Settings = {
   ngl: 0,
   ctx: 4096,
   locale: "pt",
+  githubClientId: "",
 };
 
 const KEY = "localcode.settings";

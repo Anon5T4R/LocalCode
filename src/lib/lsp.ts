@@ -15,22 +15,37 @@ export interface LspHover {
 
 const activeLanguages = new Map<string, boolean>();
 
+const builtinLspMap: Record<string, string> = {
+  rs: "rust",
+  py: "python",
+  go: "go",
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  html: "html",
+  css: "css",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+};
+
+let extensionLspMap: Record<string, { languageId?: string; command: string; args: string[] }> = {};
+
+export function registerExtensionLanguages(languages: { extensions: string[]; lsp?: { languageId?: string; command: string; args: string[] } }[]): void {
+  for (const lang of languages) {
+    if (!lang.lsp) continue;
+    for (const ext of lang.extensions) {
+      const key = ext.startsWith(".") ? ext.slice(1) : ext;
+      if (!(key in builtinLspMap)) {
+        extensionLspMap[key] = lang.lsp;
+      }
+    }
+  }
+}
+
 export function getLspLanguage(ext: string): string | null {
-  const map: Record<string, string> = {
-    rs: "rust",
-    py: "python",
-    go: "go",
-    ts: "typescript",
-    tsx: "typescript",
-    js: "javascript",
-    jsx: "javascript",
-    html: "html",
-    css: "css",
-    json: "json",
-    yaml: "yaml",
-    yml: "yaml",
-  };
-  return map[ext] ?? null;
+  return builtinLspMap[ext] ?? extensionLspMap[ext]?.languageId ?? extensionLspMap[ext]?.command ?? null;
 }
 
 export async function startLanguageServer(

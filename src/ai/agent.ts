@@ -147,6 +147,13 @@ export function parseToolCall(text: string): { tool: string; args: Record<string
   }
 }
 
+function resolvePath(p: string, workspaceRoot?: string): string {
+  if (!p) return p;
+  if (p.startsWith("/") || /^[A-Za-z]:[/\\]/.test(p)) return p;
+  if (workspaceRoot) return workspaceRoot.replace(/\\/g, "/") + "/" + p;
+  return p;
+}
+
 export async function executeTool(
   tool: string,
   args: Record<string, any>,
@@ -156,38 +163,46 @@ export async function executeTool(
   try {
     switch (tool) {
       case "read_file": {
-        const content = await readFile(args.path);
+        const path = resolvePath(args.path, workspaceRoot);
+        const content = await readFile(path);
         return { tool, success: true, output: content };
       }
       case "create_file": {
-        await writeFile(args.path, args.content);
-        return { tool, success: true, output: `Arquivo criado: ${args.path}` };
+        const path = resolvePath(args.path, workspaceRoot);
+        await writeFile(path, args.content);
+        return { tool, success: true, output: `Arquivo criado: ${path}` };
       }
       case "edit_file": {
-        const content = await readFile(args.path);
+        const path = resolvePath(args.path, workspaceRoot);
+        const content = await readFile(path);
         if (!content.includes(args.old_string)) {
-          return { tool, success: false, output: `Texto não encontrado em ${args.path}` };
+          return { tool, success: false, output: `Texto não encontrado em ${path}` };
         }
         const newContent = content.replace(args.old_string, args.new_string);
-        await writeFile(args.path, newContent);
-        return { tool, success: true, output: `Arquivo editado: ${args.path}` };
+        await writeFile(path, newContent);
+        return { tool, success: true, output: `Arquivo editado: ${path}` };
       }
       case "delete_file": {
-        await invoke("delete_file", { path: args.path });
-        return { tool, success: true, output: `Excluído: ${args.path}` };
+        const path = resolvePath(args.path, workspaceRoot);
+        await invoke("delete_file", { path });
+        return { tool, success: true, output: `Excluído: ${path}` };
       }
       case "rename_file": {
-        await invoke("rename_file", { oldPath: args.old_path, newPath: args.new_path });
-        return { tool, success: true, output: `Movido: ${args.old_path} → ${args.new_path}` };
+        const oldPath = resolvePath(args.old_path, workspaceRoot);
+        const newPath = resolvePath(args.new_path, workspaceRoot);
+        await invoke("rename_file", { oldPath, newPath });
+        return { tool, success: true, output: `Movido: ${oldPath} → ${newPath}` };
       }
       case "list_dir": {
-        const entries = await listDir(args.path);
+        const path = resolvePath(args.path, workspaceRoot);
+        const entries = await listDir(path);
         const lines = entries.map((e: any) => `${e.is_dir ? "📁" : "📄"} ${e.name}`);
         return { tool, success: true, output: lines.join("\n") };
       }
       case "search_files": {
+        const root = resolvePath(args.root || args.path, workspaceRoot) || workspaceRoot;
         const results: any[] = await invoke("search_files", {
-          root: args.root || workspaceRoot || args.path,
+          root: root,
           query: args.query,
         });
         const grouped: Record<string, string[]> = {};

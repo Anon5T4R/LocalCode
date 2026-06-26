@@ -13,11 +13,14 @@ import { SearchPanel } from "./search/SearchPanel";
 import { AiPanel } from "./ai/AiPanel";
 import { LspSetupPanel } from "./lsp-setup/LspSetupPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
-import { readFile, writeFile, extToLanguage } from "./lib/fs";
+import { readFile, writeFile, extToLanguage, registerExtensionLanguages as registerFsLanguages } from "./lib/fs";
+import { registerExtensionLanguages as registerLspLanguages } from "./lib/lsp";
 import { getBranches } from "./lib/git";
 import { saveSession, loadSession } from "./lib/session";
 import type { Tab } from "./types";
 import { basename } from "./lib/path";
+import { ExtensionManager } from "./lib/extension";
+import type { ExtensionPanel, ExtensionCommand } from "./lib/extension";
 import "./App.css";
 
 const TAB_ID = () => crypto.randomUUID();
@@ -36,6 +39,28 @@ function newTab(filePath?: string, content?: string): Tab {
   };
 }
 
+function dispatchExtCommand(
+  cmd: ExtensionCommand,
+  setVis: (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => void
+): void {
+  if (cmd.id.startsWith("panel:toggle:")) {
+    const panelId = cmd.id.replace("panel:toggle:", "");
+    setVis((v) => ({ ...v, [panelId]: !v[panelId] }));
+    return;
+  }
+  if (cmd.id.startsWith("panel:show:")) {
+    const panelId = cmd.id.replace("panel:show:", "");
+    setVis((v) => ({ ...v, [panelId]: true }));
+    return;
+  }
+  if (cmd.id.startsWith("panel:hide:")) {
+    const panelId = cmd.id.replace("panel:hide:", "");
+    setVis((v) => ({ ...v, [panelId]: false }));
+    return;
+  }
+  // Other command types can be dispatched here
+}
+
 function App() {
   const [tabs, setTabs] = useState<Tab[]>([newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
@@ -52,6 +77,10 @@ function App() {
   const [cursorCol, setCursorCol] = useState(1);
   const [gotoLine, setGotoLine] = useState<number | null>(null);
   const [tabCtx, setTabCtx] = useState<{ id: string; x: number; y: number } | null>(null);
+  const extManagerRef = useRef(new ExtensionManager());
+  const [extPanels, setExtPanels] = useState<ExtensionPanel[]>([]);
+  const [extCommands, setExtCommands] = useState<ExtensionCommand[]>([]);
+  const [extPanelVis, setExtPanelVis] = useState<Record<string, boolean>>({});
 
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -228,11 +257,31 @@ function App() {
         });
       });
     });
+    // Load extensions
+    const mgr = extManagerRef.current;
+    mgr.load(rootPath).then(() => {
+      setExtPanels(mgr.getPanels("side-panel"));
+      setExtCommands(mgr.getCommands());
+      // Register extension languages
+      const extLanguages = mgr.getLanguages();
+      registerFsLanguages(extLanguages);
+      registerLspLanguages(extLanguages);
+      // Apply extension themes
+      const themes = mgr.getThemes();
+      if (themes.length > 0) {
+        const root = document.documentElement;
+        for (const theme of themes) {
+          for (const [key, val] of Object.entries(theme.colors)) {
+            root.style.setProperty(key, val);
+          }
+        }
+      }
+    });
     const un = listen<string>("open-file", (e) => {
       if (e.payload) openFile(e.payload);
     });
     return () => { un.then((f) => f()); };
-  }, [openFile]);
+  }, [openFile, rootPath]);
 
   // ---- Intercept window close ----
   useEffect(() => {
@@ -318,11 +367,27 @@ function App() {
         e.preventDefault();
         setShowSearch((v) => !v);
         setShowTerminal(false);
+      } else {
+        // Extension command keybindings
+        for (const cmd of extCommands) {
+          if (!cmd.keybindings) continue;
+          for (const kb of cmd.keybindings) {
+            const parts = kb.toLowerCase().split("+");
+            const matchCtrl = parts.includes("ctrl") || parts.includes("cmd");
+            const matchShift = parts.includes("shift");
+            const matchKey = parts[parts.length - 1] === k;
+            if (matchCtrl === (e.ctrlKey || e.metaKey) && matchShift === e.shiftKey && matchKey) {
+              e.preventDefault();
+              dispatchExtCommand(cmd, setExtPanelVis);
+              break;
+            }
+          }
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [saveFile, openFolder, closeTab]);
+  }, [saveFile, openFolder, closeTab, extCommands]);
 
   return (
     <div className="app">
@@ -466,13 +531,17 @@ function App() {
         </div>
 
         {/* Right panels */}
-        {(showGit || showGitHub || showAi || showLspSetup || showSettings) && (
+        {(showGit || showGitHub || showAi || showLspSetup || showSettings || Object.values(extPanelVis).some(Boolean)) && (
           <div className="side-panel">
             {showGit && <GitPanel repoPath={repoPath} />}
             {showGitHub && <GitHubPanel repoPath={repoPath} />}
             {showAi && <AiPanel workspaceRoot={rootPath} />}
             {showLspSetup && <LspSetupPanel />}
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+            {extPanels.map((p) => {
+              if (!extPanelVis[p.id]) return null;
+              return <ExtensionPanelRenderer key={p.id} panel={p} manager={extManagerRef.current} />;
+            })}
           </div>
         )}
       </div>
@@ -487,6 +556,23 @@ function App() {
       />
     </div>
   );
+}
+
+function ExtensionPanelRenderer({ panel, manager }: { panel: ExtensionPanel; manager: ExtensionManager }) {
+  const ComponentRef = useRef<any>(null);
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    manager.loadPanelComponent(panel).then((comp) => {
+      if (comp) {
+        ComponentRef.current = comp;
+        forceUpdate((n) => n + 1);
+      }
+    });
+  }, [panel, manager]);
+
+  if (!ComponentRef.current) return <div className="side-panel-placeholder">Loading {panel.title}...</div>;
+  return <ComponentRef.current />;
 }
 
 export default App;

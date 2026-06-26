@@ -25,34 +25,50 @@ export async function renameEntry(oldPath: string, newPath: string): Promise<voi
   return invoke("rename_file", { oldPath, newPath });
 }
 
+const builtinExtMap: Record<string, string> = {
+  js: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  jsx: "javascript",
+  rs: "rust",
+  py: "python",
+  json: "json",
+  md: "markdown",
+  html: "html",
+  css: "css",
+  toml: "toml",
+  yaml: "yaml",
+  yml: "yaml",
+  xml: "xml",
+  sh: "shell",
+  bash: "shell",
+  go: "go",
+  java: "java",
+  cpp: "cpp",
+  c: "c",
+  h: "c",
+  hpp: "cpp",
+  sql: "sql",
+  graphql: "graphql",
+  svg: "xml",
+  txt: "plaintext",
+};
+
+let extensionExtMap: Record<string, string> = {};
+
+export function registerExtensionLanguages(languages: { extensions: string[]; monacoLanguage?: string }[]): void {
+  for (const lang of languages) {
+    if (!lang.monacoLanguage) continue;
+    for (const ext of lang.extensions) {
+      const key = ext.startsWith(".") ? ext.slice(1) : ext;
+      // Extensions cannot override built-in entries
+      if (!(key in builtinExtMap)) {
+        extensionExtMap[key] = lang.monacoLanguage;
+      }
+    }
+  }
+}
+
 export function extToLanguage(ext: string): string {
-  const map: Record<string, string> = {
-    js: "javascript",
-    ts: "typescript",
-    tsx: "typescript",
-    jsx: "javascript",
-    rs: "rust",
-    py: "python",
-    json: "json",
-    md: "markdown",
-    html: "html",
-    css: "css",
-    toml: "toml",
-    yaml: "yaml",
-    yml: "yaml",
-    xml: "xml",
-    sh: "shell",
-    bash: "shell",
-    go: "go",
-    java: "java",
-    cpp: "cpp",
-    c: "c",
-    h: "c",
-    hpp: "cpp",
-    sql: "sql",
-    graphql: "graphql",
-    svg: "xml",
-    txt: "plaintext",
-  };
-  return map[ext] || "plaintext";
+  return builtinExtMap[ext] || extensionExtMap[ext] || "plaintext";
 }

@@ -42,6 +42,23 @@ npm run tauri build
 4. Click "Procurar" to scan, then "Usar" on a model
 5. If `llama-server` is missing, click "Baixar llama-server"
 
+## GitHub OAuth Setup
+
+To use GitHub integration with device flow login:
+
+1. Go to https://github.com/settings/developers and create a new OAuth App
+2. Set "Homepage URL" to `http://localhost:1420` (or your app URL)
+3. Set "Authorization callback URL" to `http://localhost:1420`
+4. Copy the Client ID
+5. In LocalCode Settings (⚙️), paste the Client ID into `githubClientId`
+6. Click "Login with GitHub" — a code will appear. Press the link to open the device activation page, enter the code, and authorize.
+
+> The official LocalCode OAuth app Client ID will be documented here when registered.
+
+## Extension System
+
+See [EXTENSIONS.md](EXTENSIONS.md) for the extension spec and [EXTENDING.md](EXTENDING.md) for a step-by-step tutorial.
+
 ## License
 
 MIT

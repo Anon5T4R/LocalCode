@@ -1,17 +1,27 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, memo } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { RepoEntry } from "../types";
+import { setToken, getToken, removeToken, listRepos, createRepo, createPullRequest, cloneRepo, deviceLogin, pollToken } from "../lib/github";
+import { loadSettings } from "../lib/settings";
 
 interface GitHubPanelProps {
   repoPath: string | null;
 }
 
-export function GitHubPanel({ repoPath }: GitHubPanelProps) {
+export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelProps) {
   const [token, setLocalToken] = useState<string>("");
   const [savedToken, setSavedToken] = useState<string | null>(null);
   const [repos, setRepos] = useState<RepoEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"auth" | "repos" | "pr">("auth");
+
+  // Device flow state
+  const [deviceCode, setDeviceCode] = useState("");
+  const [userCode, setUserCode] = useState("");
+  const [deviceUrl, setDeviceUrl] = useState("");
+  const [polling, setPolling] = useState(false);
+  const pollRef = useRef(false);
 
   // Create repo form
   const [newRepoName, setNewRepoName] = useState("");
@@ -31,27 +41,95 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
 
   const checkToken = useCallback(async () => {
     try {
-      const { getToken } = await import("../lib/github");
       const t = await getToken();
       if (t) {
         setSavedToken(t);
         setLocalToken("****");
         setTab("repos");
       }
-    } catch (e) {
-      // no token
-    }
+    } catch { /* no token */ }
   }, []);
 
   useEffect(() => {
     checkToken();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkToken]);
+
+  // Device flow: start login
+  const handleDeviceLogin = useCallback(async () => {
+    const settings = loadSettings();
+    const clientId = settings.githubClientId;
+    if (!clientId) {
+      setMessage("Configure um GitHub Client ID nas Configurações (⚙️).");
+      return;
+    }
+    setLoading(true);
+    try {
+      const resp = await deviceLogin(clientId);
+      setDeviceCode(resp.device_code);
+      setUserCode(resp.user_code);
+      setDeviceUrl(resp.verification_uri);
+      setMessage(`Código: ${resp.user_code} — Abrindo navegador...`);
+      openUrl(resp.verification_uri);
+      // Start polling
+      setPolling(true);
+      pollRef.current = true;
+    } catch (e: any) {
+      setMessage(`Erro: ${e}`);
+    }
+    setLoading(false);
+  }, []);
+
+  // Poll for token
+  useEffect(() => {
+    if (!polling || !deviceCode) return;
+    const settings = loadSettings();
+    const clientId = settings.githubClientId;
+    let cancelled = false;
+
+    const doPoll = async () => {
+      while (pollRef.current && !cancelled) {
+        try {
+          const t = await pollToken(deviceCode, clientId);
+          if (!pollRef.current || cancelled) return;
+          // Success!
+          await setToken(t);
+          setSavedToken(t);
+          setLocalToken("****");
+          setPolling(false);
+          setMessage("Login realizado!");
+          setTab("repos");
+          return;
+        } catch (e: any) {
+          if (!pollRef.current || cancelled) return;
+          if (e === "slow_down") {
+            await new Promise((r) => setTimeout(r, 10000));
+            continue;
+          }
+          if (e !== "pending") {
+            setPolling(false);
+            setMessage(`Erro: ${e}`);
+            return;
+          }
+          // pending - wait and retry
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+    };
+    doPoll();
+    return () => { cancelled = true; };
+  }, [polling, deviceCode]);
+
+  const handleCancelPoll = useCallback(() => {
+    pollRef.current = false;
+    setPolling(false);
+    setDeviceCode("");
+    setUserCode("");
+    setMessage("");
   }, []);
 
   const handleSaveToken = useCallback(async () => {
     if (!token.trim() || savedToken) return;
     try {
-      const { setToken } = await import("../lib/github");
       await setToken(token.trim());
       setSavedToken(token.trim());
       setMessage("Token salvo!");
@@ -63,11 +141,12 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
 
   const handleRemoveToken = useCallback(async () => {
     try {
-      const { removeToken } = await import("../lib/github");
       await removeToken();
       setSavedToken(null);
       setLocalToken("");
       setRepos([]);
+      setPolling(false);
+      pollRef.current = false;
       setMessage("Token removido");
       setTab("auth");
     } catch (e) {
@@ -79,7 +158,6 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
     if (!savedToken) return;
     setLoading(true);
     try {
-      const { listRepos } = await import("../lib/github");
       const r = await listRepos(savedToken);
       setRepos(r);
     } catch (e) {
@@ -92,7 +170,6 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
     if (!savedToken || !newRepoName.trim()) return;
     setLoading(true);
     try {
-      const { createRepo } = await import("../lib/github");
       await createRepo(savedToken, newRepoName.trim(), newRepoPrivate, newRepoDesc.trim());
       setMessage(`Repositório "${newRepoName}" criado!`);
       setNewRepoName("");
@@ -108,16 +185,7 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
     if (!savedToken || !prOwner || !prRepo || !prTitle || !prHead) return;
     setLoading(true);
     try {
-      const { createPullRequest } = await import("../lib/github");
-      const result = await createPullRequest(
-        savedToken,
-        prOwner,
-        prRepo,
-        prTitle,
-        prBody,
-        prHead,
-        prBase
-      );
+      const result = await createPullRequest(savedToken, prOwner, prRepo, prTitle, prBody, prHead, prBase);
       setMessage(`PR #${result.number} criado! ${result.url}`);
       setPrTitle("");
       setPrBody("");
@@ -131,7 +199,6 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
     if (!cloneUrl.trim() || !repoPath) return;
     setLoading(true);
     try {
-      const { cloneRepo } = await import("../lib/github");
       const dest = repoPath.replace(/\\/g, "/") + "/" + cloneUrl.split("/").pop()?.replace(".git", "");
       await cloneRepo(cloneUrl.trim(), dest);
       setMessage(`Clonado para ${dest}`);
@@ -180,19 +247,63 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
 
       {tab === "auth" && (
         <div className="github-auth">
-          <p className="github-info">
-            Crie um token em github.com/settings/tokens (repo, read:user)
-          </p>
-          <input
-            className="github-input"
-            type="password"
-            placeholder="Personal Access Token"
-            value={savedToken ? "****" : token}
-            onChange={(e) => setLocalToken(e.target.value)}
-          />
-          <button className="github-btn" onClick={handleSaveToken} disabled={!token.trim() || savedToken !== null}>
-            Salvar Token
-          </button>
+          {polling ? (
+            <div className="github-device-flow">
+              <p className="github-device-step">
+                <strong>Passo 1:</strong> Clique no botao abaixo para abrir o navegador
+              </p>
+              <button className="github-open-browser-btn" onClick={() => openUrl(deviceUrl)}>
+                Abrir Navegador
+              </button>
+              <p className="github-device-step">
+                Ou acesse manualmente: <span className="github-link" onClick={() => openUrl(deviceUrl)}>{deviceUrl}</span>
+              </p>
+
+              <p className="github-device-step">
+                <strong>Passo 2:</strong> Copie o codigo abaixo e cole no site do GitHub
+              </p>
+              <div>
+                <span className="github-user-code" onClick={() => navigator.clipboard.writeText(userCode)} title="Clique para copiar">{userCode}</span>
+                <button className="github-copy-code-btn" onClick={() => navigator.clipboard.writeText(userCode)}>
+                  Copiar
+                </button>
+              </div>
+
+              <p className="github-device-step">
+                <strong>Passo 3:</strong> Autorize o aplicativo no GitHub
+              </p>
+              <p className="github-device-step">
+                <span className="github-polling-indicator"></span>
+                Aguardando autorizacao...
+              </p>
+              <button className="github-cancel-btn" onClick={handleCancelPoll}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="github-info">
+                Faça login no GitHub pelo navegador
+              </p>
+              <button className="github-btn" onClick={handleDeviceLogin} disabled={loading}>
+                Login com GitHub
+              </button>
+              <hr className="github-divider" />
+              <p className="github-info">
+                Ou cole manualmente um Personal Access Token
+              </p>
+              <input
+                className="github-input"
+                type="password"
+                placeholder="Personal Access Token"
+                value={savedToken ? "****" : token}
+                onChange={(e) => setLocalToken(e.target.value)}
+              />
+              <button className="github-btn" onClick={handleSaveToken} disabled={!token.trim() || savedToken !== null}>
+                Salvar Token
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -316,4 +427,4 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
       {message && <div className="github-message">{message}</div>}
     </div>
   );
-}
+});

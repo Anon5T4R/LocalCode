@@ -7,6 +7,7 @@ import {
 } from "../lib/ai";
 import { loadSettings, saveSettings } from "../lib/settings";
 import { AGENT_SYSTEM_PROMPT, parseToolCall, executeTool, normalizeArgs } from "./agent";
+import type { ToolResult } from "./agent";
 
 interface AiPanelProps {
   workspaceRoot?: string | null;
@@ -86,7 +87,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
     setStreaming(false);
   }, []);
 
-  const executeAgentTool = useCallback(async (tool: string, rawArgs: Record<string, any>) => {
+  const executeAgentTool = useCallback(async (tool: string, rawArgs: Record<string, any>): Promise<ToolResult | null> => {
     const args = normalizeArgs(rawArgs, tool);
 
     // Tools que executam automaticamente sem confirmação
@@ -98,11 +99,12 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
       if (result.success && (tool === "create_file" || tool === "edit_file" || tool === "rename_file")) {
         onRefresh?.();
       }
-      return;
+      return result;
     }
 
     // delete_file e execute_command requerem confirmação
     setPendingTool({ tool, args });
+    return null;
   }, [workspaceRoot, onRefresh]);
 
   const confirmTool = useCallback(async () => {
@@ -146,13 +148,10 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
     setInput("");
 
     const userMsg: ChatMsg = { role: "user", content: text };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
+    let currentMessages: ChatMsg[] = [...messages, userMsg];
+    setMessages(currentMessages);
     setStreaming(true);
     setToolHistory([]);
-
-    const assistantMsg: ChatMsg = { role: "assistant", content: "" };
-    setMessages((prev) => [...prev, assistantMsg]);
 
     const sysPrompt = agentMode ? AGENT_SYSTEM_PROMPT : "Você é um assistente de programação útil. Responda em português.";
 
@@ -160,55 +159,95 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
       const abort = new AbortController();
       abortRef.current = abort;
 
-      let fullContent = "";
-      let collectedToolCalls: any[] = [];
+      // Loop allowing multiple tool execution rounds
+      for (let round = 0; round < 10; round++) {
+        if (abort.signal.aborted) break;
 
-      await streamChat(
-        status.port,
-        [{ role: "system", content: sysPrompt }, ...updatedMessages],
-        (delta: StreamDelta) => {
-          if (delta.content) {
-            fullContent += delta.content;
-          }
-          if (delta.tool_calls) {
-            collectedToolCalls = [...collectedToolCalls, ...delta.tool_calls];
-          }
-          setMessages((prev) => {
-            const copy = [...prev];
-            const last = copy[copy.length - 1];
-            if (last?.role === "assistant") {
-              copy[copy.length - 1] = {
-                ...last,
-                content: fullContent,
-                tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
-              };
-            }
-            return copy;
-          });
-        },
-        { signal: abort.signal }
-      );
+        const assistantMsg: ChatMsg = { role: "assistant", content: "" };
+        const msgsWithAssistant = [...currentMessages, assistantMsg];
+        setMessages(msgsWithAssistant);
 
-      // Check for tool calls
-      if (collectedToolCalls.length > 0) {
-        for (const tc of collectedToolCalls) {
-          try {
-            const parsed = JSON.parse(tc.function.arguments);
-            const toolCall = { tool: tc.function.name, args: parsed };
-            await executeAgentTool(toolCall.tool, toolCall.args);
-          } catch {
-            // Try parsing the full content as a tool call
-            const parsed = parseToolCall(fullContent);
-            if (parsed) {
-              await executeAgentTool(parsed.tool, parsed.args);
+        let fullContent = "";
+        let collectedToolCalls: any[] = [];
+
+        await streamChat(
+          status.port,
+          [{ role: "system", content: sysPrompt }, ...currentMessages],
+          (delta: StreamDelta) => {
+            if (delta.content) {
+              fullContent += delta.content;
             }
+            if (delta.tool_calls) {
+              collectedToolCalls = [...collectedToolCalls, ...delta.tool_calls];
+            }
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.role === "assistant") {
+                copy[copy.length - 1] = {
+                  ...last,
+                  content: fullContent,
+                  tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+                };
+              }
+              return copy;
+            });
+          },
+          { signal: abort.signal }
+        );
+
+        if (abort.signal.aborted) break;
+
+        // Determine tool calls to execute
+        let toolCallsToExec: { tool: string; args: Record<string, any> }[] = [];
+
+        if (collectedToolCalls.length > 0) {
+          for (const tc of collectedToolCalls) {
+            try {
+              const parsed = JSON.parse(tc.function.arguments);
+              toolCallsToExec.push({ tool: tc.function.name, args: parsed });
+            } catch {
+              // skip malformed
+            }
+          }
+        } else {
+          const parsed = parseToolCall(fullContent);
+          if (parsed) {
+            toolCallsToExec.push(parsed);
           }
         }
-      } else {
-        const parsed = parseToolCall(fullContent);
-        if (parsed) {
-          await executeAgentTool(parsed.tool, parsed.args);
+
+        if (toolCallsToExec.length === 0) break; // no more tools, done
+
+        // Execute tools and feed results back
+        let toolResultsStr = "";
+        for (const tc of toolCallsToExec) {
+          const result = await executeAgentTool(tc.tool, tc.args);
+          if (result) {
+            toolResultsStr += `[${tc.tool}] ${result.success ? "OK" : "ERRO"}: ${result.output}\n`;
+            if (result.success && (tc.tool === "create_file" || tc.tool === "edit_file" || tc.tool === "rename_file")) {
+              onRefresh?.();
+            }
+          } else {
+            // Tool requires confirmation - break out of loop, user must respond
+            toolResultsStr = "";
+            break;
+          }
         }
+
+        if (!toolResultsStr) {
+          // pending confirmation, stop loop
+          currentMessages = [...currentMessages, { role: "assistant", content: fullContent, tool_calls: collectedToolCalls }];
+          setMessages(currentMessages);
+          break;
+        }
+
+        const toolResultMsg: ChatMsg = {
+          role: "user",
+          content: `Resultados das ferramentas:\n${toolResultsStr}\nContinue com a próxima etapa ou responda ao usuário.`,
+        };
+        currentMessages = [...currentMessages, { role: "assistant", content: fullContent, tool_calls: collectedToolCalls }, toolResultMsg];
+        setMessages(currentMessages);
       }
     } catch (e: any) {
       if (e.name !== "AbortError") {
@@ -217,7 +256,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
     }
     setStreaming(false);
     abortRef.current = null;
-  }, [input, streaming, status.port, messages, agentMode, executeAgentTool]);
+  }, [input, streaming, status.port, messages, agentMode, executeAgentTool, onRefresh]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -303,6 +342,13 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
                 <summary>Pensamento</summary>
                 {msg.reasoning}
               </details>
+            )}
+            {msg.role === "assistant" && msg.content && (
+              <div className="ai-msg-actions">
+                <button className="ai-copy-btn" onClick={() => navigator.clipboard.writeText(msg.content)} title="Copiar resposta">
+                  📋
+                </button>
+              </div>
             )}
           </div>
         ))}

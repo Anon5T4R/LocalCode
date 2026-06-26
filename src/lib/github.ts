@@ -54,3 +54,18 @@ export async function createPullRequest(
 export async function cloneRepo(url: string, dest: string): Promise<void> {
   return invoke("github_clone_repo", { url, dest });
 }
+
+export interface DeviceFlowResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  interval: number;
+}
+
+export async function deviceLogin(clientId: string): Promise<DeviceFlowResponse> {
+  return invoke<DeviceFlowResponse>("github_device_login", { clientId });
+}
+
+export async function pollToken(deviceCode: string, clientId: string): Promise<string> {
+  return invoke<string>("github_poll_token", { deviceCode, clientId });
+}

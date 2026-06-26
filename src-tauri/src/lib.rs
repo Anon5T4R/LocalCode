@@ -448,6 +448,69 @@ fn github_remove_token(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct DeviceFlowResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    interval: u64,
+}
+
+#[tauri::command]
+async fn github_device_login(client_id: String) -> Result<DeviceFlowResponse, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://github.com/login/device/code")
+        .header("Accept", "application/json")
+        .form(&[("client_id", client_id.as_str()), ("scope", "repo")])
+        .send()
+        .await
+        .map_err(|e| format!("Erro ao iniciar login: {}", e))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Erro ao ler resposta: {}", e))?;
+
+    if let Some(err) = resp["error"].as_str() {
+        return Err(resp["error_description"].as_str().unwrap_or(err).to_string());
+    }
+
+    Ok(DeviceFlowResponse {
+        device_code: resp["device_code"].as_str().unwrap_or("").to_string(),
+        user_code: resp["user_code"].as_str().unwrap_or("").to_string(),
+        verification_uri: resp["verification_uri"].as_str().unwrap_or("").to_string(),
+        interval: resp["interval"].as_u64().unwrap_or(5),
+    })
+}
+
+#[tauri::command]
+async fn github_poll_token(device_code: String, client_id: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("device_code", device_code.as_str()),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Erro ao obter token: {}", e))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Erro ao ler resposta: {}", e))?;
+
+    if let Some(token) = resp["access_token"].as_str() {
+        Ok(token.to_string())
+    } else if resp["error"].as_str() == Some("authorization_pending") {
+        Err("pending".to_string())
+    } else if resp["error"].as_str() == Some("slow_down") {
+        Err("slow_down".to_string())
+    } else {
+        Err(resp["error_description"].as_str().unwrap_or("erro desconhecido").to_string())
+    }
+}
+
 fn get_octocrab(token: &str) -> octocrab::Octocrab {
     octocrab::OctocrabBuilder::new()
         .personal_token(token.to_string())
@@ -813,6 +876,14 @@ fn get_startup_file() -> Option<String> {
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn get_extensions_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let ext_dir = dir.join("extensions");
+    std::fs::create_dir_all(&ext_dir).map_err(|e| e.to_string())?;
+    Ok(ext_dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -1253,6 +1324,8 @@ pub fn run() {
             github_create_repo,
             github_create_pr,
             github_clone_repo,
+            github_device_login,
+            github_poll_token,
             lsp_start,
             lsp_stop,
             lsp_did_open,
@@ -1280,6 +1353,7 @@ pub fn run() {
             install_lsp_server,
             get_startup_file,
             exit_app,
+            get_extensions_dir,
             save_session,
             load_session,
         ])
