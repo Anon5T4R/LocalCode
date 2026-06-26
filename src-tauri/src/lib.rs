@@ -668,11 +668,14 @@ use std::sync::Arc;
 
 #[tauri::command]
 async fn lsp_start(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, Arc<LspManager>>,
     language: String,
     workspace_root: String,
 ) -> Result<String, String> {
-    manager.start(language, workspace_root).await
+    let rd = resolve_lsp_resource_dir(&app);
+    let (cmd, args) = lsp::resolve_command(&language, &rd)?;
+    manager.start(language, workspace_root, cmd, args).await
 }
 
 #[tauri::command]
@@ -1096,7 +1099,36 @@ fn execute_terminal_command(command: String) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
-// LSP server detection & installation
+// Bundled LSP resource helpers
+// ---------------------------------------------------------------------------
+
+/// Resolve the resource directory for bundled LSP servers.
+/// Checks (in order): Tauri resource dir, current exe parent, dev fallback.
+fn resolve_lsp_resource_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(rd) = app.path().resource_dir() {
+        if rd.join("lsp-packages").exists() {
+            return rd;
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join("lsp-packages").exists() {
+                return dir.to_path_buf();
+            }
+        }
+    }
+    #[cfg(debug_assertions)]
+    {
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        if dev.join("lsp-packages").exists() {
+            return dev;
+        }
+    }
+    PathBuf::new()
+}
+
+// ---------------------------------------------------------------------------
+// LSP server detection & installation (offline-first)
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
@@ -1120,55 +1152,74 @@ fn check_command(cmd: &str) -> bool {
 }
 
 #[tauri::command]
-fn check_lsp_servers() -> Vec<LspServerStatus> {
+fn check_lsp_servers(app: tauri::AppHandle) -> Vec<LspServerStatus> {
+    let rd = resolve_lsp_resource_dir(&app);
     vec![
         LspServerStatus {
             name: "typescript-language-server".into(),
-            installed: check_command("typescript-language-server"),
-            install_hint: "npm install -g typescript-language-server".into(),
+            installed: lsp::check_bundled_lsp(&rd, "typescript-language-server")
+                || check_command("typescript-language-server"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "rust-analyzer".into(),
-            installed: check_command("rust-analyzer"),
-            install_hint: "rustup component add rust-analyzer".into(),
+            installed: lsp::check_bundled_lsp(&rd, "rust-analyzer")
+                || check_command("rust-analyzer"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "pylsp".into(),
-            installed: check_command("pylsp"),
-            install_hint: "pip install python-lsp-server".into(),
+            installed: lsp::check_bundled_lsp(&rd, "pylsp")
+                || check_command("pylsp"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "gopls".into(),
-            installed: check_command("gopls"),
-            install_hint: "go install golang.org/x/tools/gopls@latest".into(),
+            installed: lsp::check_bundled_lsp(&rd, "gopls")
+                || check_command("gopls"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "yaml-language-server".into(),
-            installed: check_command("yaml-language-server"),
-            install_hint: "npm install -g yaml-language-server".into(),
+            installed: lsp::check_bundled_lsp(&rd, "yaml-language-server")
+                || check_command("yaml-language-server"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "vscode-html-language-server".into(),
-            installed: check_command("vscode-html-language-server"),
-            install_hint: "npm install -g vscode-langservers-extracted".into(),
+            installed: lsp::check_bundled_lsp(&rd, "vscode-html-language-server")
+                || check_command("vscode-html-language-server"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "vscode-css-language-server".into(),
-            installed: check_command("vscode-css-language-server"),
-            install_hint: "npm install -g vscode-langservers-extracted".into(),
+            installed: lsp::check_bundled_lsp(&rd, "vscode-css-language-server")
+                || check_command("vscode-css-language-server"),
+            install_hint: "Embutido (offline)".into(),
         },
         LspServerStatus {
             name: "vscode-json-language-server".into(),
-            installed: check_command("vscode-json-language-server"),
-            install_hint: "npm install -g vscode-langservers-extracted".into(),
+            installed: lsp::check_bundled_lsp(&rd, "vscode-json-language-server")
+                || check_command("vscode-json-language-server"),
+            install_hint: "Embutido (offline)".into(),
+        },
+        LspServerStatus {
+            name: "dart".into(),
+            installed: lsp::check_bundled_lsp(&rd, "dart")
+                || check_command("dart"),
+            install_hint: "Embutido (offline)".into(),
         },
     ]
 }
 
-/// Execute an install command (npm/pip/go/rustup) for a language server.
-/// Returns stdout on success, stderr on failure.
+/// Execute an install command — only used now for non-embedded LSPs (pylsp).
 #[tauri::command]
-fn install_lsp_server(name: String) -> Result<String, String> {
+fn install_lsp_server(app: tauri::AppHandle, name: String) -> Result<String, String> {
+    let rd = resolve_lsp_resource_dir(&app);
+    // If the LSP is already bundled, short-circuit
+    if lsp::check_bundled_lsp(&rd, &name) {
+        return Ok("Já incluído no pacote offline.".into());
+    }
     let (cmd, args): (&str, Vec<&str>) = match name.as_str() {
         "typescript-language-server" => ("cmd", vec!["/c", "npm", "install", "-g", "typescript-language-server"]),
         "rust-analyzer" => ("rustup", vec!["component", "add", "rust-analyzer"]),

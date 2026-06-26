@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import Editor, { OnMount, OnChange } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
+import "../lib/monaco-setup";
 import {
   getCompletion,
   getHover,

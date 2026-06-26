@@ -164,6 +164,8 @@ impl LspManager {
         &self,
         language: String,
         workspace_root: String,
+        cmd: String,
+        args: Vec<String>,
     ) -> Result<String, String> {
         {
             let instances = self.instances.read().await;
@@ -172,10 +174,7 @@ impl LspManager {
             }
         }
 
-        let (cmd, args) = Self::server_command(&language)
-            .ok_or_else(|| format!("Nenhum LSP configurado para '{}'", language))?;
-
-        let mut child = Command::new(cmd)
+        let mut child = Command::new(&cmd)
             .args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -867,6 +866,87 @@ impl LspManager {
             server_name: inst.server_name.clone(),
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Resource resolution for bundled / offline LSP servers
+// ---------------------------------------------------------------------------
+
+/// Returns a (cmd, args) pair for the given language.
+/// Checks bundled resources first, then falls back to PATH.
+pub fn resolve_command(language: &str, resource_dir: &std::path::Path) -> Result<(String, Vec<String>), String> {
+    let (base_cmd, base_args) = LspManager::server_command(language)
+        .ok_or_else(|| format!("Nenhum LSP configurado para '{}'", language))?;
+
+    let args: Vec<String> = base_args.iter().map(|a| a.to_string()).collect();
+
+    // Try bundled resource first — returns Some((exe, extra_args))
+    if let Some((exe, extra)) = find_bundled_lsp(resource_dir, base_cmd) {
+        let mut all_args = extra;
+        all_args.extend(args);
+        return Ok((exe, all_args));
+    }
+
+    // Fallback: use PATH
+    Ok((base_cmd.to_string(), args))
+}
+
+/// Returns (exe, extra_args_to_prepend) for a bundled LSP, or None if not found.
+fn find_bundled_lsp(resource_dir: &std::path::Path, server_name: &str) -> Option<(String, Vec<String>)> {
+    match server_name {
+        "rust-analyzer" => {
+            let p = resource_dir.join("lsp-packages/bin/rust-analyzer.exe");
+            if p.exists() {
+                Some((p.to_string_lossy().to_string(), vec![]))
+            } else {
+                None
+            }
+        }
+        "gopls" => {
+            let p = resource_dir.join("lsp-packages/bin/gopls.exe");
+            if p.exists() {
+                Some((p.to_string_lossy().to_string(), vec![]))
+            } else {
+                None
+            }
+        }
+        "pylsp" => {
+            let py = resource_dir.join("lsp-packages/python/python.exe");
+            if py.exists() {
+                Some((py.to_string_lossy().to_string(), vec!["-m".into(), "pylsp".into()]))
+            } else {
+                None
+            }
+        }
+        // npm-based LSPs: invoke via cmd /c on Windows
+        "typescript-language-server"
+        | "yaml-language-server"
+        | "vscode-html-language-server"
+        | "vscode-css-language-server"
+        | "vscode-json-language-server" => {
+            let rel = format!("lsp-packages/node_modules/.bin/{}.cmd", server_name);
+            let p = resource_dir.join(&rel);
+            if p.exists() {
+                Some(("cmd".into(), vec!["/c".into(), p.to_string_lossy().to_string()]))
+            } else {
+                None
+            }
+        }
+        "dart" => {
+            let p = resource_dir.join("lsp-packages/dart-sdk/bin/dart.exe");
+            if p.exists() {
+                Some((p.to_string_lossy().to_string(), vec!["language-server".into(), "--protocol=stdio".into()]))
+            } else {
+                None
+            }
+        }
+        _ => None, // no bundled resource (fallback to PATH)
+    }
+}
+
+/// Check whether a bundled LSP resource exists (for offline status).
+pub fn check_bundled_lsp(resource_dir: &std::path::Path, server_name: &str) -> bool {
+    find_bundled_lsp(resource_dir, server_name).is_some()
 }
 
 // ---------------------------------------------------------------------------

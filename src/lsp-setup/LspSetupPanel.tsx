@@ -9,7 +9,6 @@ interface LspServerStatus {
 
 export function LspSetupPanel() {
   const [servers, setServers] = useState<LspServerStatus[]>([]);
-  const [installing, setInstalling] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
@@ -25,20 +24,8 @@ export function LspSetupPanel() {
     refresh();
   }, [refresh]);
 
-  const handleInstall = useCallback(async (name: string) => {
-    setInstalling(name);
-    setLog((prev) => [...prev, `Instalando ${name}...`]);
-    try {
-      const result = await invoke<string>("install_lsp_server", { name });
-      setLog((prev) => [...prev, `✅ ${name} instalado: ${result}`]);
-      await refresh();
-    } catch (e: any) {
-      setLog((prev) => [...prev, `❌ Falha ao instalar ${name}: ${e.message || e}`]);
-    }
-    setInstalling(null);
-  }, [refresh]);
-
   const allInstalled = servers.length > 0 && servers.every((s) => s.installed);
+  const offlineCount = servers.filter((s) => s.installed && s.install_hint === "Embutido (offline)").length;
 
   return (
     <div className="lsp-setup-panel">
@@ -50,11 +37,11 @@ export function LspSetupPanel() {
       {allInstalled ? (
         <div className="lsp-all-ok">
           ✅ Todos os language servers estão instalados!
+          {offlineCount > 0 && <span className="lsp-offline-info"> ({offlineCount} embutidos)</span>}
         </div>
       ) : (
         <div className="lsp-setup-info">
           Language servers fornecem autocomplete, diagnósticos, hover, etc.
-          Instale os que faltam:
         </div>
       )}
 
@@ -66,17 +53,13 @@ export function LspSetupPanel() {
               <span className={`lsp-server-badge ${s.installed ? "ok" : "missing"}`}>
                 {s.installed ? "✅" : "❌"}
               </span>
+              {s.installed && s.install_hint === "Embutido (offline)" && (
+                <span className="lsp-bundled-badge">offline</span>
+              )}
             </div>
             {!s.installed && (
               <div className="lsp-server-actions">
                 <code className="lsp-install-hint">{s.install_hint}</code>
-                <button
-                  className="lsp-install-btn"
-                  onClick={() => handleInstall(s.name)}
-                  disabled={installing === s.name}
-                >
-                  {installing === s.name ? "Instalando..." : "Instalar"}
-                </button>
               </div>
             )}
           </div>

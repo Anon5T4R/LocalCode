@@ -28,6 +28,66 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install npm LSP packages (offline)
+        shell: pwsh
+        run: |
+          cd src-tauri\lsp-packages
+          npm install --ignore-scripts
+
+      - name: Setup Go (for gopls)
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Download rust-analyzer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "src-tauri\lsp-packages\bin" -Force
+          $url = "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-pc-windows-msvc.gz"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\rust-analyzer.gz"
+          Add-Type -AssemblyName System.IO.Compression
+          $input = [System.IO.File]::OpenRead("$env:TEMP\rust-analyzer.gz")
+          $gz = New-Object System.IO.Compression.GZipStream($input, [System.IO.Compression.CompressionMode]::Decompress)
+          $output = [System.IO.File]::OpenWrite("src-tauri\lsp-packages\bin\rust-analyzer.exe")
+          $gz.CopyTo($output)
+          $gz.Close(); $output.Close(); $input.Close()
+
+      - name: Install gopls
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "src-tauri\lsp-packages\bin" -Force
+          go install golang.org/x/tools/gopls@latest
+          Copy-Item "$env:USERPROFILE\go\bin\gopls.exe" "src-tauri\lsp-packages\bin\gopls.exe"
+
+      - name: Install pylsp (bundled Python embeddable)
+        shell: pwsh
+        run: |
+          $pyVer = "3.12.9"
+          $url = "https://www.python.org/ftp/python/$pyVer/python-$pyVer-embed-amd64.zip"
+          $dest = "src-tauri\lsp-packages\python"
+          New-Item -ItemType Directory -Path $dest -Force
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\python.zip"
+          Expand-Archive -Path "$env:TEMP\python.zip" -DestinationPath $dest -Force
+          # Enable site-packages in ._pth
+          $pth = Get-ChildItem $dest -Filter "*._pth" | Select-Object -First 1
+          if ($pth) {
+            (Get-Content $pth.FullName) -replace '#import site', 'import site' | Set-Content $pth.FullName
+          }
+          # Install pip + pylsp
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$env:TEMP\get-pip.py"
+          & "$dest\python.exe" "$env:TEMP\get-pip.py" --no-warn-script-location 2>&1 | Out-Null
+          & "$dest\python.exe" -m pip install python-lsp-server -q 2>&1 | Out-Null
+          # Cleanup pip cache to save space
+          & "$dest\python.exe" -m pip cache purge -q 2>&1 | Out-Null
+          Remove-Item -Recurse -Force "$dest\Lib\site-packages\pip" -ErrorAction SilentlyContinue
+
+      - name: Download Dart SDK
+        shell: pwsh
+        run: |
+          $url = "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-windows-x64-release.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\dart-sdk.zip"
+          Expand-Archive -Path "$env:TEMP\dart-sdk.zip" -DestinationPath "src-tauri\lsp-packages" -Force
+
       - name: Download llama-server
         shell: pwsh
         run: |

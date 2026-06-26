@@ -4,3 +4,7 @@ dist-ssr/
 *.local
 src-tauri/target/
 src-tauri/binaries/llama/
+src-tauri/lsp-packages/node_modules/
+src-tauri/lsp-packages/package-lock.json
+src-tauri/lsp-packages/python/
+src-tauri/lsp-packages/dart-sdk/
