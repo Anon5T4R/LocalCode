@@ -43,14 +43,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "src-tauri\lsp-packages\bin" -Force
-          $url = "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-pc-windows-msvc.gz"
-          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\rust-analyzer.gz"
-          Add-Type -AssemblyName System.IO.Compression
-          $input = [System.IO.File]::OpenRead("$env:TEMP\rust-analyzer.gz")
-          $gz = New-Object System.IO.Compression.GZipStream($input, [System.IO.Compression.CompressionMode]::Decompress)
-          $output = [System.IO.File]::OpenWrite("src-tauri\lsp-packages\bin\rust-analyzer.exe")
-          $gz.CopyTo($output)
-          $gz.Close(); $output.Close(); $input.Close()
+          $url = "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\rust-analyzer.zip"
+          Expand-Archive -Path "$env:TEMP\rust-analyzer.zip" -DestinationPath "src-tauri\lsp-packages\bin" -Force
 
       - name: Install gopls
         shell: pwsh
