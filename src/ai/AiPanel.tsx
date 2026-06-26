@@ -46,12 +46,17 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
 
   const handleBrowseModels = useCallback(async () => {
     try {
-      const list = await listModels(modelDir);
-      setModels(list);
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false, title: "Selecionar pasta de modelos GGUF" });
+      if (selected) {
+        setModelDir(selected);
+        const list = await listModels(selected);
+        setModels(list);
+      }
     } catch (e: any) {
       setMessages((prev) => [...prev, { role: "user", content: `Erro: ${e}` }]);
     }
-  }, [modelDir]);
+  }, []);
 
   const handleStartLlm = useCallback(async (modelPath: string) => {
     setLoading(true);
