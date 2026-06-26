@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, memo } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import type { FileEntry } from "../types";
+import { listDir, renameEntry, writeFile, createDir, deleteEntry } from "../lib/fs";
+import { basename, dirname, joinPath } from "../lib/path";
 
 interface FileExplorerProps {
   rootPath: string | null;
@@ -68,7 +71,6 @@ export const FileExplorer = memo(function FileExplorer({
     if (!rootPath) return;
     setLoading(true);
     try {
-      const { listDir } = await import("../lib/fs");
       const items = await listDir(rootPath);
       setEntries(items);
     } catch (e) {
@@ -83,7 +85,6 @@ export const FileExplorer = memo(function FileExplorer({
 
   const loadChildren = useCallback(async (dirPath: string) => {
     try {
-      const { listDir } = await import("../lib/fs");
       const items = await listDir(dirPath);
       setChildrenMap((prev) => ({ ...prev, [dirPath]: items }));
     } catch (e) {
@@ -128,7 +129,7 @@ export const FileExplorer = memo(function FileExplorer({
   const startRename = useCallback(
     (path: string) => {
       setRenaming(path);
-      const name = entries.find((e) => e.path === path)?.name || path.split("\\").pop() || path.split("/").pop() || "";
+      const name = entries.find((e) => e.path === path)?.name || basename(path);
       setRenameValue(name);
       setCreating(null);
     },
@@ -140,10 +141,8 @@ export const FileExplorer = memo(function FileExplorer({
       setRenaming(null);
       return;
     }
-    const parent = renaming.substring(0, renaming.lastIndexOf("\\"));
-    const newPath = parent + "\\" + renameValue.trim();
+    const newPath = joinPath(dirname(renaming), renameValue.trim());
     try {
-      const { renameEntry } = await import("../lib/fs");
       await renameEntry(renaming, newPath);
       setRenaming(null);
       refresh();
@@ -167,13 +166,11 @@ export const FileExplorer = memo(function FileExplorer({
       setCreating(null);
       return;
     }
-    const fullPath = createParent ? `${createParent}\\${createValue.trim()}` : createValue.trim();
+    const fullPath = createParent ? joinPath(createParent, createValue.trim()) : createValue.trim();
     try {
       if (creating === "folder") {
-        const { createDir } = await import("../lib/fs");
         await createDir(fullPath);
       } else {
-        const { writeFile } = await import("../lib/fs");
         await writeFile(fullPath, "");
       }
       setCreating(null);
@@ -185,8 +182,9 @@ export const FileExplorer = memo(function FileExplorer({
 
   const handleDelete = useCallback(
     async (path: string) => {
+      const ok = await ask(`Excluir "${basename(path)}"?`, { title: "Excluir", kind: "warning" });
+      if (!ok) return;
       try {
-        const { deleteEntry } = await import("../lib/fs");
         await deleteEntry(path);
         refresh();
       } catch (e) {

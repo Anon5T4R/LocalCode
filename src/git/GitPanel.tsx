@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import type { StatusEntry, CommitEntry, BranchEntry } from "../types";
+import { getStatus, getLog, getBranches, stageFiles, commit, push, pull, checkout } from "../lib/git";
 
 interface GitPanelProps {
   repoPath: string | null;
 }
 
-export function GitPanel({ repoPath }: GitPanelProps) {
+export const GitPanel = memo(function GitPanel({ repoPath }: GitPanelProps) {
   const [status, setStatus] = useState<StatusEntry[]>([]);
   const [branches, setBranches] = useState<BranchEntry[]>([]);
   const [commits, setCommits] = useState<CommitEntry[]>([]);
@@ -18,7 +19,6 @@ export function GitPanel({ repoPath }: GitPanelProps) {
     if (!repoPath) return;
     setLoading(true);
     try {
-      const { getStatus, getLog, getBranches } = await import("../lib/git");
       const [s, l, b] = await Promise.all([
         getStatus(repoPath),
         getLog(repoPath, 10),
@@ -41,7 +41,6 @@ export function GitPanel({ repoPath }: GitPanelProps) {
     async (paths: string[]) => {
       if (!repoPath) return;
       try {
-        const { stageFiles } = await import("../lib/git");
         await stageFiles(repoPath, paths);
         refresh();
       } catch (e) {
@@ -54,7 +53,6 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   const handleCommit = useCallback(async () => {
     if (!repoPath || !commitMsg.trim()) return;
     try {
-      const { commit } = await import("../lib/git");
       await commit(repoPath, commitMsg.trim());
       setCommitMsg("");
       setMessage("Commit realizado!");
@@ -67,7 +65,6 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   const handlePush = useCallback(async () => {
     if (!repoPath) return;
     try {
-      const { push } = await import("../lib/git");
       await push(repoPath);
       setMessage("Push realizado!");
     } catch (e) {
@@ -78,9 +75,19 @@ export function GitPanel({ repoPath }: GitPanelProps) {
   const handlePull = useCallback(async () => {
     if (!repoPath) return;
     try {
-      const { pull } = await import("../lib/git");
       await pull(repoPath);
       setMessage("Pull realizado!");
+      refresh();
+    } catch (e) {
+      setMessage(`Erro: ${e}`);
+    }
+  }, [repoPath, refresh]);
+
+  const handleCheckout = useCallback(async (branch: string) => {
+    if (!repoPath) return;
+    try {
+      await checkout(repoPath, branch);
+      setMessage(`Branch alterado para ${branch}`);
       refresh();
     } catch (e) {
       setMessage(`Erro: ${e}`);
@@ -217,6 +224,7 @@ export function GitPanel({ repoPath }: GitPanelProps) {
             <div
               key={b.name}
               className={`git-branch-item ${b.current ? "current" : ""}`}
+              onClick={() => !b.current && handleCheckout(b.name)}
             >
               <span className="git-branch-icon">{b.current ? "✓" : "○"}</span>
               <span className="git-branch-name">{b.name}</span>
@@ -231,4 +239,4 @@ export function GitPanel({ repoPath }: GitPanelProps) {
       {message && <div className="git-message">{message}</div>}
     </div>
   );
-}
+});

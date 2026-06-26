@@ -5,7 +5,6 @@ export interface Settings {
   lastModelPath: string;
   ngl: number;
   ctx: number;
-  showAiPanel: boolean;
   locale: "pt" | "en";
 }
 
@@ -14,7 +13,6 @@ const DEFAULTS: Settings = {
   lastModelPath: "",
   ngl: 0,
   ctx: 4096,
-  showAiPanel: false,
   locale: "pt",
 };
 

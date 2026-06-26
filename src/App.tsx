@@ -18,14 +18,13 @@ import { readFile, writeFile, extToLanguage } from "./lib/fs";
 import { getBranches } from "./lib/git";
 import { saveSession, loadSession } from "./lib/session";
 import type { Tab } from "./types";
+import { basename } from "./lib/path";
 import "./App.css";
 
 const TAB_ID = () => crypto.randomUUID();
 
 function newTab(filePath?: string, content?: string): Tab {
-  const name = filePath
-    ? filePath.split("\\").pop()?.split("/").pop() || "sem-titulo"
-    : "sem-titulo";
+  const name = filePath ? basename(filePath) : "sem-titulo";
   const ext = filePath ? (name.split(".").pop() || "") : "";
   return {
     id: TAB_ID(),
@@ -136,10 +135,13 @@ function App() {
     setActiveId(t.id);
   }, []);
 
-  const closeTab = useCallback((id: string) => {
+  const closeTab = useCallback(async (id: string) => {
     const t = tabsRef.current.find((x) => x.id === id);
     if (!t) return;
-    if (t.dirty && !window.confirm(`"${t.title}" tem alterações não salvas. Fechar mesmo assim?`)) return;
+    if (t.dirty) {
+      const ok = await ask(`"${t.title}" tem alterações não salvas. Fechar mesmo assim?`, { title: "Fechar arquivo", kind: "warning" });
+      if (!ok) return;
+    }
 
     const idx = tabsRef.current.findIndex((x) => x.id === id);
     const remaining = tabsRef.current.filter((x) => x.id !== id);
@@ -228,12 +230,16 @@ function App() {
 
   // ---- Auto-save session ----
   const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionKeyRef = useRef<string>("");
   useEffect(() => {
     if (sessionTimer.current) clearTimeout(sessionTimer.current);
     sessionTimer.current = setTimeout(() => {
       const tbs = tabsRef.current;
       const id = activeIdRef.current;
       if (tbs.length === 1 && !tbs[0].path && !tbs[0].dirty) return;
+      const key = tbs.map((t) => t.path || `__${t.id}`).join("\x00") + "\x00" + id;
+      if (key === sessionKeyRef.current) return;
+      sessionKeyRef.current = key;
       const activeIndex = tbs.findIndex((t) => t.id === id);
       saveSession({
         rootPath: rootPath,
@@ -243,7 +249,7 @@ function App() {
       });
     }, 500);
     return () => { if (sessionTimer.current) clearTimeout(sessionTimer.current); };
-  }, [rootPath, tabs, activeId]);
+  }, [rootPath, activeId]);
 
   // ---- Keyboard shortcuts ----
   useEffect(() => {
@@ -442,7 +448,7 @@ function App() {
           <div className="side-panel">
             {showGit && <GitPanel repoPath={repoPath} />}
             {showGitHub && <GitHubPanel repoPath={repoPath} />}
-            {showAi && <AiPanel />}
+            {showAi && <AiPanel workspaceRoot={rootPath} />}
             {showLspSetup && <LspSetupPanel />}
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
           </div>

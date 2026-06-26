@@ -1,20 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { StatusEntry, CommitEntry, BranchEntry } from "../types";
 
-export async function initRepo(path: string): Promise<void> {
-  return invoke("git_init", { path });
-}
-
 export async function getStatus(repoPath: string): Promise<StatusEntry[]> {
   return invoke<StatusEntry[]>("git_status", { repoPath });
 }
 
 export async function stageFiles(repoPath: string, paths: string[]): Promise<void> {
   return invoke("git_add", { repoPath, paths });
-}
-
-export async function unstageFiles(repoPath: string, paths: string[]): Promise<void> {
-  return invoke("git_unstage", { repoPath, paths });
 }
 
 export async function commit(repoPath: string, message: string): Promise<void> {
@@ -31,10 +23,6 @@ export async function getBranches(repoPath: string): Promise<BranchEntry[]> {
 
 export async function checkout(repoPath: string, branch: string): Promise<void> {
   return invoke("git_checkout", { repoPath, branch });
-}
-
-export async function createBranch(repoPath: string, name: string): Promise<void> {
-  return invoke("git_branch_create", { repoPath, name });
 }
 
 export async function push(repoPath: string): Promise<void> {

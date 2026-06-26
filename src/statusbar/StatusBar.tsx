@@ -1,3 +1,6 @@
+import { memo } from "react";
+import { basename } from "../lib/path";
+
 interface StatusBarProps {
   language?: string;
   line?: number;
@@ -8,7 +11,7 @@ interface StatusBarProps {
   indent?: string;
 }
 
-export function StatusBar({
+export const StatusBar = memo(function StatusBar({
   language = "Plain Text",
   line = 1,
   column = 1,
@@ -27,7 +30,7 @@ export function StatusBar({
         )}
         {filePath && (
           <span className="status-item status-path" title={filePath}>
-            {filePath.split("\\").pop()?.split("/").pop()}
+            {basename(filePath)}
           </span>
         )}
       </div>
@@ -39,4 +42,4 @@ export function StatusBar({
       </div>
     </div>
   );
-}
+});

@@ -72,13 +72,6 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn read_file_base64(path: String) -> Result<String, String> {
-    use base64::Engine;
-    let bytes = fs::read(&path).map_err(|e| format!("Falha ao ler '{}': {}", path, e))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
-}
-
-#[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     if let Some(parent) = Path::new(&path).parent() {
         if !parent.as_os_str().is_empty() {
@@ -262,12 +255,6 @@ fn search_files(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-fn git_init(path: String) -> Result<(), String> {
-    git2::Repository::init(&path).map_err(|e| format!("Falha ao init repo: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
 fn git_status(repo_path: String) -> Result<Vec<StatusEntry>, String> {
     let repo = git2::Repository::open(&repo_path)
         .map_err(|e| format!("Falha ao abrir repo: {}", e))?;
@@ -321,18 +308,6 @@ fn git_add(repo_path: String, paths: Vec<String>) -> Result<(), String> {
     let mut index = repo.index().map_err(|e| format!("Falha ao abrir index: {}", e))?;
     for p in &paths {
         index.add_path(Path::new(p)).map_err(|e| format!("Falha ao adicionar '{}': {}", p, e))?;
-    }
-    index.write().map_err(|e| format!("Falha ao escrever index: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
-fn git_unstage(repo_path: String, paths: Vec<String>) -> Result<(), String> {
-    let repo = git2::Repository::open(&repo_path)
-        .map_err(|e| format!("Falha ao abrir repo: {}", e))?;
-    let mut index = repo.index().map_err(|e| format!("Falha ao abrir index: {}", e))?;
-    for p in &paths {
-        index.remove_path(Path::new(p)).map_err(|e| format!("Falha ao unstage '{}': {}", p, e))?;
     }
     index.write().map_err(|e| format!("Falha ao escrever index: {}", e))?;
     Ok(())
@@ -422,17 +397,6 @@ fn git_checkout(repo_path: String, branch: String) -> Result<(), String> {
         .map_err(|e| format!("Falha no checkout tree: {}", e))?;
     repo.set_head(&format!("refs/heads/{}", branch))
         .map_err(|e| format!("Falha ao set HEAD: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
-fn git_branch_create(repo_path: String, name: String) -> Result<(), String> {
-    let repo = git2::Repository::open(&repo_path)
-        .map_err(|e| format!("Falha ao abrir repo: {}", e))?;
-    let head = repo.head().map_err(|e| format!("Falha ao ler HEAD: {}", e))?;
-    let commit = head.peel_to_commit().map_err(|e| format!("Falha ao peel commit: {}", e))?;
-    repo.branch(&name, &commit, false)
-        .map_err(|e| format!("Falha ao criar branch: {}", e))?;
     Ok(())
 }
 
@@ -1269,21 +1233,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             read_text_file,
-            read_file_base64,
             write_text_file,
             list_dir,
             create_dir,
             delete_file,
             rename_file,
-            git_init,
             git_status,
             git_add,
-            git_unstage,
             git_commit,
             git_log,
             git_branches,
             git_checkout,
-            git_branch_create,
             git_push,
             git_pull,
             github_set_token,

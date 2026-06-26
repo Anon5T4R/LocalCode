@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, memo } from "react";
 import Editor, { OnMount, OnChange } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import "../lib/monaco-setup";
@@ -28,7 +28,7 @@ interface MonacoWrapperProps {
   workspaceRoot?: string | null;
 }
 
-export function MonacoWrapper({
+export const MonacoWrapper = memo(function MonacoWrapper({
   language,
   value,
   onChange,
@@ -192,15 +192,15 @@ export function MonacoWrapper({
       // Code action provider
       const codeActionDisposable =
         monaco.languages.registerCodeActionProvider("*", {
-          provideCodeActions: async (_model, _range, _context) => {
+          provideCodeActions: async (_model, range, _context) => {
             const lang = lspLangRef.current;
             const fp = path;
             if (!lang || !fp) return { actions: [], dispose: () => {} };
             try {
               const actions = await getCodeAction(
                 lang, fp,
-                _range.startLineNumber - 1,
-                _range.startColumn - 1
+                range.startLineNumber - 1,
+                range.startColumn - 1
               );
               return {
                 actions: actions.map((a) => ({
@@ -429,7 +429,7 @@ export function MonacoWrapper({
       }}
     />
   );
-}
+});
 
 function mapLspKindToMonaco(
   kind: string,

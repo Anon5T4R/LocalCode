@@ -132,7 +132,7 @@ export function GitHubPanel({ repoPath }: GitHubPanelProps) {
     setLoading(true);
     try {
       const { cloneRepo } = await import("../lib/github");
-      const dest = repoPath + "\\" + cloneUrl.split("/").pop()?.replace(".git", "");
+      const dest = repoPath.replace(/\\/g, "/") + "/" + cloneUrl.split("/").pop()?.replace(".git", "");
       await cloneRepo(cloneUrl.trim(), dest);
       setMessage(`Clonado para ${dest}`);
       setCloneUrl("");

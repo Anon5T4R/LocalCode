@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from "react";
-import { getDocumentSymbols } from "../lib/lsp";
+import { useEffect, useState, useRef, memo } from "react";
+import { getDocumentSymbols, getLspLanguage } from "../lib/lsp";
 import type { LspSymbol } from "../lib/lsp";
 
 interface OutlinePanelProps {
@@ -8,7 +8,7 @@ interface OutlinePanelProps {
   onSelect: (line: number) => void;
 }
 
-export function OutlinePanel({ language, filePath, onSelect }: OutlinePanelProps) {
+export const OutlinePanel = memo(function OutlinePanel({ language, filePath, onSelect }: OutlinePanelProps) {
   const [symbols, setSymbols] = useState<LspSymbol[]>([]);
   const [loading, setLoading] = useState(false);
   const lspLangRef = useRef<string | null>(null);
@@ -17,12 +17,7 @@ export function OutlinePanel({ language, filePath, onSelect }: OutlinePanelProps
     if (!language || !filePath) { setSymbols([]); return; }
 
     const ext = filePath.split(".").pop() || "";
-    const langMap: Record<string, string> = {
-      rs: "rust", py: "python", go: "go", ts: "typescript", tsx: "typescript",
-      js: "javascript", jsx: "javascript", html: "html", css: "css",
-      json: "json", yaml: "yaml", yml: "yaml",
-    };
-    const lspLang = langMap[ext] || null;
+    const lspLang = getLspLanguage(ext);
     lspLangRef.current = lspLang;
     if (!lspLang) { setSymbols([]); return; }
 
@@ -62,7 +57,7 @@ export function OutlinePanel({ language, filePath, onSelect }: OutlinePanelProps
       </div>
     </div>
   );
-}
+});
 
 function symbolIcon(kind: string): string {
   const icons: Record<string, string> = {

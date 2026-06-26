@@ -1,3 +1,6 @@
+import { readFile, writeFile, listDir } from "../lib/fs";
+import { invoke } from "@tauri-apps/api/core";
+
 export interface AgentTool {
   name: string;
   description: string;
@@ -149,8 +152,6 @@ export async function executeTool(
   args: Record<string, any>,
   workspaceRoot?: string
 ): Promise<ToolResult> {
-  const { readFile, writeFile } = await import("../lib/fs");
-  const { invoke } = await import("@tauri-apps/api/core");
 
   try {
     switch (tool) {
@@ -180,7 +181,6 @@ export async function executeTool(
         return { tool, success: true, output: `Movido: ${args.old_path} → ${args.new_path}` };
       }
       case "list_dir": {
-        const { listDir } = await import("../lib/fs");
         const entries = await listDir(args.path);
         const lines = entries.map((e: any) => `${e.is_dir ? "📁" : "📄"} ${e.name}`);
         return { tool, success: true, output: lines.join("\n") };

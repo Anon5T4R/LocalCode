@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { ChatMsg, StreamDelta, ModelInfo } from "../lib/ai";
 import {
   listModels, startLlm, stopLlm, llmStatus,
@@ -12,7 +13,7 @@ interface AiPanelProps {
   onRefresh?: () => void;
 }
 
-export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
+export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -132,7 +133,6 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
     setPendingTool(null);
     setToolHistory((prev) => [...prev, `  ▶️ Executando: ${command}`]);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       const result: string = await invoke("execute_terminal_command", { command });
       setToolHistory((prev) => [...prev, `  ✅ ${result}`]);
     } catch (e: any) {
@@ -360,4 +360,4 @@ export function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
       </div>
     </div>
   );
-}
+});

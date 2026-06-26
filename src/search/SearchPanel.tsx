@@ -97,7 +97,7 @@ export function SearchPanel({ rootPath, onOpenFile }: SearchPanelProps) {
                 style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", color: "var(--text-secondary)" }}
                 onClick={() => onOpenFile(filePath, matches[0]?.line)}
               >
-                📄 {filePath.split("\\").pop()?.split("/").pop()}
+                📄 {filePath.replace(/\\/g, "/").split("/").pop()}
                 <span style={{ fontWeight: "normal", color: "var(--text-muted)" }}>
                   ({matches.length})
                 </span>
