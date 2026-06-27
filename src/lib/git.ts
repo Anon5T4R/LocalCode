@@ -29,6 +29,6 @@ export async function push(repoPath: string): Promise<void> {
   return invoke("git_push", { repoPath });
 }
 
-export async function pull(repoPath: string): Promise<void> {
-  return invoke("git_pull", { repoPath });
+export async function pull(repoPath: string): Promise<string> {
+  return invoke<string>("git_pull", { repoPath });
 }

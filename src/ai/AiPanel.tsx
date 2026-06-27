@@ -12,9 +12,10 @@ import type { ToolResult } from "./agent";
 interface AiPanelProps {
   workspaceRoot?: string | null;
   onRefresh?: () => void;
+  onFileChanged?: (path: string) => void;
 }
 
-export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPanelProps) {
+export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileChanged }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -102,6 +103,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
       setToolHistory((prev) => [...prev, result.success ? `  ✅ ${result.output}` : `  ❌ ${result.output}`]);
       if (result.success && (tool === "create_file" || tool === "edit_file" || tool === "rename_file")) {
         onRefresh?.();
+        if (result.affectedPath) onFileChanged?.(result.affectedPath);
       }
       return result;
     }
@@ -109,7 +111,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
     // delete_file e execute_command requerem confirmação
     setPendingTool({ tool, args });
     return null;
-  }, [workspaceRoot, onRefresh]);
+  }, [workspaceRoot, onRefresh, onFileChanged]);
 
   const confirmTool = useCallback(async () => {
     if (!pendingTool) return;
@@ -231,6 +233,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
             toolResultsStr += `[${tc.tool}] ${result.success ? "OK" : "ERRO"}: ${result.output}\n`;
             if (result.success && (tc.tool === "create_file" || tc.tool === "edit_file" || tc.tool === "rename_file")) {
               onRefresh?.();
+              if (result.affectedPath) onFileChanged?.(result.affectedPath);
             }
           } else {
             // Tool requires confirmation - break out of loop, user must respond
@@ -260,7 +263,7 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh }: AiPan
     }
     setStreaming(false);
     abortRef.current = null;
-  }, [input, streaming, status.port, messages, agentMode, executeAgentTool, onRefresh]);
+  }, [input, streaming, status.port, messages, agentMode, executeAgentTool, onRefresh, onFileChanged]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {

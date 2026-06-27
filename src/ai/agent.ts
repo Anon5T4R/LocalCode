@@ -12,6 +12,7 @@ export interface ToolResult {
   tool: string;
   success: boolean;
   output: string;
+  affectedPath?: string;
 }
 
 export const AGENT_TOOLS: AgentTool[] = [
@@ -170,7 +171,7 @@ export async function executeTool(
       case "create_file": {
         const path = resolvePath(args.path, workspaceRoot);
         await writeFile(path, args.content);
-        return { tool, success: true, output: `Arquivo criado: ${path}` };
+        return { tool, success: true, output: `Arquivo criado: ${path}`, affectedPath: path };
       }
       case "edit_file": {
         const path = resolvePath(args.path, workspaceRoot);
@@ -180,7 +181,7 @@ export async function executeTool(
         }
         const newContent = content.replace(args.old_string, args.new_string);
         await writeFile(path, newContent);
-        return { tool, success: true, output: `Arquivo editado: ${path}` };
+        return { tool, success: true, output: `Arquivo editado: ${path}`, affectedPath: path };
       }
       case "delete_file": {
         const path = resolvePath(args.path, workspaceRoot);

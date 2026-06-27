@@ -7,6 +7,8 @@ import { basename, dirname, joinPath } from "../lib/path";
 interface FileExplorerProps {
   rootPath: string | null;
   onOpenFile: (path: string) => void;
+  /** Incrementing counter that triggers a re-scan (e.g. after the AI agent edits files). */
+  refreshSignal?: number;
 }
 
 function getFileIcon(name: string): string {
@@ -55,6 +57,7 @@ function getFileIcon(name: string): string {
 export const FileExplorer = memo(function FileExplorer({
   rootPath,
   onOpenFile,
+  refreshSignal,
 }: FileExplorerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [childrenMap, setChildrenMap] = useState<Record<string, FileEntry[]>>({});
@@ -82,6 +85,15 @@ export const FileExplorer = memo(function FileExplorer({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // External refresh trigger (e.g. AI agent created/edited files): re-scan root
+  // and any currently expanded folders so new entries show up immediately.
+  useEffect(() => {
+    if (!refreshSignal) return;
+    refresh();
+    for (const dirPath of expanded) loadChildren(dirPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   const loadChildren = useCallback(async (dirPath: string) => {
     try {

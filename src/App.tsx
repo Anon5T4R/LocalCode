@@ -82,6 +82,7 @@ function App() {
   const [cursorCol, setCursorCol] = useState(1);
   const [gotoLine, setGotoLine] = useState<number | null>(null);
   const [tabCtx, setTabCtx] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [fileTreeVersion, setFileTreeVersion] = useState(0);
   const extManagerRef = useRef(new ExtensionManager());
   const [extPanels, setExtPanels] = useState<ExtensionPanel[]>([]);
   const [extCommands, setExtCommands] = useState<ExtensionCommand[]>([]);
@@ -100,6 +101,19 @@ function App() {
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const repoPath = rootPath;
+
+  // ---- File-watching ----
+  useEffect(() => {
+    if (!rootPath) return;
+    invoke("watch_workspace", { path: rootPath }).catch(() => {});
+    const unlistenPromise = listen<null>("workspace-changed", () => {
+      setFileTreeVersion((v) => v + 1);
+    });
+    return () => {
+      invoke("unwatch_workspace").catch(() => {});
+      unlistenPromise.then((f) => f());
+    };
+  }, [rootPath]);
 
   // ---- Git branch polling ----
   useEffect(() => {
@@ -213,6 +227,22 @@ function App() {
       setActiveId(neighbor.id);
     }
     setTabs(remaining);
+  }, []);
+
+  // ---- Sync AI file edits into open tab buffers ----
+  const syncTabFromDisk = useCallback(async (path: string) => {
+    const tab = tabsRef.current.find((t) => t.path === path);
+    if (!tab) return;
+    try {
+      const content = await readFile(path);
+      setTabs((ts) =>
+        ts.map((t) =>
+          t.path === path ? { ...t, content, savedContent: content, dirty: false } : t
+        )
+      );
+    } catch {
+      // file may have been deleted; leave the tab as-is
+    }
   }, []);
 
   // ---- Open folder dialog ----
@@ -482,6 +512,7 @@ function App() {
           <FileExplorer
             rootPath={rootPath}
             onOpenFile={openFile}
+            refreshSignal={fileTreeVersion}
           />
           {activeTab && rootPath && (
             <OutlinePanel
@@ -540,7 +571,7 @@ function App() {
           <div className="side-panel">
             {showGit && <GitPanel repoPath={repoPath} />}
             {showGitHub && <GitHubPanel repoPath={repoPath} />}
-            {showAi && <AiPanel workspaceRoot={rootPath} />}
+            {showAi && <AiPanel workspaceRoot={rootPath} onRefresh={() => setFileTreeVersion((v) => v + 1)} onFileChanged={syncTabFromDisk} />}
             {showLspSetup && <LspSetupPanel />}
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
             {extPanels.map((p) => {

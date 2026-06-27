@@ -40,7 +40,8 @@ npm run tauri build
 2. Click the AI button in the toolbar
 3. Set the folder containing `.gguf` files
 4. Click "Procurar" to scan, then "Usar" on a model
-5. If `llama-server` is missing, click "Baixar llama-server"
+
+`llama-server` is bundled with the release build (see `.github/workflows/build.yml`). In `npm run tauri dev`, place a `llama-server` binary in `src-tauri/binaries/llama/`.
 
 ## GitHub OAuth Setup
 

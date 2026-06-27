@@ -156,7 +156,6 @@ fn search_files(
     let whole_word = whole_word.unwrap_or(false);
 
     let mut results = Vec::new();
-    let mut dirs = vec![PathBuf::from(&root)];
 
     let re = if use_regex {
         Some(regex::Regex::new(&query).map_err(|e| format!("Regex inválida: {}", e))?)
@@ -164,90 +163,176 @@ fn search_files(
         None
     };
 
-    while let Some(dir) = dirs.pop() {
-        let entries = match fs::read_dir(&dir) {
+    const BINARY_EXT: &[&str] = &[
+        "png", "jpg", "jpeg", "gif", "ico", "woff", "woff2", "ttf", "otf", "eot",
+        "pdf", "zip", "gz", "tar", "exe", "dll", "so", "dylib", "bin", "class",
+        "wasm", "lock",
+    ];
+
+    let search_for_lower = if case_sensitive { String::new() } else { query.to_lowercase() };
+
+    for dir_entry in ignore::WalkBuilder::new(&root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(false)
+        .build()
+    {
+        let dir_entry = match dir_entry {
             Ok(e) => e,
             Err(_) => continue,
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name.starts_with('.') || name == "node_modules" || name == "target" {
-                    continue;
-                }
-                dirs.push(path);
-            } else if path.is_file() {
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                let binary = ["png", "jpg", "jpeg", "gif", "ico", "woff", "woff2", "ttf", "otf", "eot",
-                    "pdf", "zip", "gz", "tar", "exe", "dll", "so", "dylib", "bin", "class"];
-                if binary.contains(&ext) {
-                    continue;
-                }
-                let content = match fs::read_to_string(&path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
+        if !dir_entry.file_type().map_or(false, |t| t.is_file()) {
+            continue;
+        }
+        let path = dir_entry.path();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if BINARY_EXT.contains(&ext) {
+            continue;
+        }
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
 
-                    let mut search_line = |line: &str, line_idx: usize| {
-                    let (search_in, search_for) = if case_sensitive {
-                        (line.to_string(), query.clone())
-                    } else {
-                        (line.to_lowercase(), query.to_lowercase())
-                    };
+        let mut search_line = |line: &str, line_idx: usize| {
+            let (search_in, search_for) = if case_sensitive {
+                (line.to_string(), query.clone())
+            } else {
+                (line.to_lowercase(), search_for_lower.clone())
+            };
 
-                    if let Some(re) = &re {
-                        for m in re.find_iter(&search_in) {
-                            let col = m.start();
-                            let end = m.end();
-                            if whole_word {
-                                let before = col > 0 && search_in.as_bytes().get(col - 1).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
-                                let after = search_in.as_bytes().get(end).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
-                                if before || after { continue; }
-                            }
-                            results.push(SearchMatch {
-                                path: path.to_string_lossy().to_string(),
-                                line: (line_idx + 1) as u32,
-                                column: (col + 1) as u32,
-                                line_content: line.to_string(),
-                                match_start: col as u32,
-                                match_end: end as u32,
-                            });
-                        }
-                    } else {
-                        let mut start = 0;
-                        while let Some(col) = search_in[start..].find(&search_for) {
-                            let abs_col = start + col;
-                            let end = abs_col + query.len();
-                            if whole_word {
-                                let before = abs_col > 0 && search_in.as_bytes().get(abs_col - 1).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
-                                let after = search_in.as_bytes().get(end).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
-                                if before || after {
-                                    start = abs_col + 1;
-                                    continue;
-                                }
-                            }
-                            results.push(SearchMatch {
-                                path: path.to_string_lossy().to_string(),
-                                line: (line_idx + 1) as u32,
-                                column: (abs_col + 1) as u32,
-                                line_content: line.to_string(),
-                                match_start: abs_col as u32,
-                                match_end: end as u32,
-                            });
+            if let Some(re) = &re {
+                for m in re.find_iter(&search_in) {
+                    let col = m.start();
+                    let end = m.end();
+                    if whole_word {
+                        let before = col > 0 && search_in.as_bytes().get(col - 1).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+                        let after = search_in.as_bytes().get(end).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+                        if before || after { return; }
+                    }
+                    results.push(SearchMatch {
+                        path: path.to_string_lossy().to_string(),
+                        line: (line_idx + 1) as u32,
+                        column: (col + 1) as u32,
+                        line_content: line.to_string(),
+                        match_start: col as u32,
+                        match_end: end as u32,
+                    });
+                }
+            } else {
+                let mut start = 0;
+                while let Some(col) = search_in[start..].find(&search_for) {
+                    let abs_col = start + col;
+                    let end = abs_col + query.len();
+                    if whole_word {
+                        let before = abs_col > 0 && search_in.as_bytes().get(abs_col - 1).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+                        let after = search_in.as_bytes().get(end).map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+                        if before || after {
                             start = abs_col + 1;
+                            continue;
                         }
                     }
-                };
-
-                for (i, line) in content.lines().enumerate() {
-                    search_line(line, i);
+                    results.push(SearchMatch {
+                        path: path.to_string_lossy().to_string(),
+                        line: (line_idx + 1) as u32,
+                        column: (abs_col + 1) as u32,
+                        line_content: line.to_string(),
+                        match_start: abs_col as u32,
+                        match_end: end as u32,
+                    });
+                    start = abs_col + 1;
                 }
             }
+        };
+
+        for (i, line) in content.lines().enumerate() {
+            search_line(line, i);
         }
     }
 
     Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// File watching
+// ---------------------------------------------------------------------------
+
+struct WatcherState {
+    watcher: Option<Box<dyn notify::Watcher + Send>>,
+}
+
+impl Default for WatcherState {
+    fn default() -> Self {
+        Self { watcher: None }
+    }
+}
+
+#[tauri::command]
+async fn watch_workspace(
+    app: tauri::AppHandle,
+    path: String,
+    state: tauri::State<'_, Mutex<WatcherState>>,
+) -> Result<(), String> {
+    use notify::{EventKind, Watcher, RecursiveMode, RecommendedWatcher, Config};
+    use tokio::sync::mpsc;
+
+    let (tx, mut rx) = mpsc::channel::<()>(64);
+
+    let watcher = RecommendedWatcher::new(
+        move |res: notify::Result<notify::Event>| {
+            if let Ok(event) = res {
+                let relevant = matches!(
+                    event.kind,
+                    EventKind::Create(_)
+                        | EventKind::Remove(_)
+                        | EventKind::Modify(notify::event::ModifyKind::Name(_))
+                );
+                if relevant {
+                    let _ = tx.blocking_send(());
+                }
+            }
+        },
+        Config::default(),
+    )
+    .map_err(|e| format!("Falha ao criar watcher: {}", e))?;
+
+    let mut watcher = watcher;
+    watcher
+        .watch(Path::new(&path), RecursiveMode::Recursive)
+        .map_err(|e| format!("Falha ao monitorar pasta: {}", e))?;
+
+    state.lock().unwrap().watcher = Some(Box::new(watcher));
+
+    // Background task: debounce events and emit to frontend
+    tokio::spawn(async move {
+        loop {
+            if rx.recv().await.is_none() {
+                break;
+            }
+            // Drain any rapid follow-up events within 300 ms
+            loop {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(300),
+                    rx.recv(),
+                )
+                .await
+                {
+                    Ok(Some(())) => {} // more events; keep draining
+                    Ok(None) => return, // channel closed
+                    Err(_) => break,   // timeout: no more events in window
+                }
+            }
+            let _ = app.emit("workspace-changed", ());
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn unwatch_workspace(state: tauri::State<'_, Mutex<WatcherState>>) {
+    state.lock().unwrap().watcher = None;
 }
 
 // ---------------------------------------------------------------------------
@@ -355,11 +440,14 @@ fn git_log(repo_path: String, max: usize) -> Result<Vec<CommitEntry>, String> {
         if i >= max { break; }
         let oid = oid.map_err(|e| format!("Erro no revwalk: {}", e))?;
         let commit = repo.find_commit(oid).map_err(|e| format!("Commit não encontrado: {}", e))?;
+        let time = chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
         commits.push(CommitEntry {
             hash: oid.to_string()[..7].to_string(),
             author: commit.author().name().unwrap_or("unknown").to_string(),
             message: commit.message().unwrap_or("").trim().to_string(),
-            time: Utc::now().to_rfc3339(),
+            time,
         });
     }
     Ok(commits)
@@ -631,7 +719,7 @@ fn git_push(repo_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn git_pull(repo_path: String) -> Result<(), String> {
+fn git_pull(repo_path: String) -> Result<String, String> {
     let repo = git2::Repository::open(&repo_path)
         .map_err(|e| format!("Falha ao abrir repo: {}", e))?;
 
@@ -644,47 +732,53 @@ fn git_pull(repo_path: String) -> Result<(), String> {
     let mut fetch_opts = git2::FetchOptions::new();
     fetch_opts.remote_callbacks(callbacks);
 
-    remote.fetch(&["refs/heads/*:refs/heads/*"], Some(&mut fetch_opts), None)
+    // Fetch into refs/remotes/origin/* — never overwrites local branches directly
+    remote.fetch(&["+refs/heads/*:refs/remotes/origin/*"], Some(&mut fetch_opts), None)
         .map_err(|e| format!("Falha ao fazer fetch: {}", e))?;
 
-    let fetch_head = repo.find_reference("FETCH_HEAD")
-        .map_err(|e| format!("Falha ao encontrar FETCH_HEAD: {}", e))?;
-    let fetch_commit = fetch_head.peel_to_commit()
-        .map_err(|e| format!("Falha ao peel FETCH_HEAD: {}", e))?;
-
     let head = repo.head().map_err(|e| format!("Falha ao ler HEAD: {}", e))?;
-    let head_commit = head.peel_to_commit()
-        .map_err(|e| format!("Falha ao peel HEAD: {}", e))?;
+    if !head.is_branch() {
+        return Err("HEAD está em modo detached. Faça checkout de um branch antes de fazer pull.".into());
+    }
+    let branch_name = head.shorthand()
+        .ok_or("Falha ao ler nome do branch")?
+        .to_string();
 
-    let mut merge_opts = git2::MergeOptions::new();
-    let annotated = repo.find_annotated_commit(fetch_commit.id())
+    let remote_ref_name = format!("refs/remotes/origin/{}", branch_name);
+    let remote_ref = repo.find_reference(&remote_ref_name)
+        .map_err(|_| format!("Branch remoto 'origin/{}' não encontrado", branch_name))?;
+    let remote_commit = remote_ref.peel_to_commit()
+        .map_err(|e| format!("Falha ao ler commit remoto: {}", e))?;
+
+    let annotated = repo.find_annotated_commit(remote_commit.id())
         .map_err(|e| format!("Falha ao criar annotated commit: {}", e))?;
-    repo.merge(&[&annotated], Some(&mut merge_opts), None)
-        .map_err(|e| format!("Falha no merge: {}", e))?;
 
-    if repo.index().map_err(|e| format!("Falha ao ler index: {}", e))?.has_conflicts() {
-        return Err("Conflitos de merge detectados.".into());
+    let (analysis, _) = repo.merge_analysis(&[&annotated])
+        .map_err(|e| format!("Falha ao analisar merge: {}", e))?;
+
+    if analysis.is_up_to_date() {
+        return Ok("Já está atualizado.".into());
     }
 
-    let sig = git2::Signature::now("LocalCode", "localcode@local")
-        .map_err(|e| format!("Falha ao criar signature: {}", e))?;
-    let tree_oid = repo.index()
-        .map_err(|e| format!("Falha ao ler index: {}", e))?
-        .write_tree()
-        .map_err(|e| format!("Falha ao escrever tree: {}", e))?;
-    let tree = repo.find_tree(tree_oid)
-        .map_err(|e| format!("Falha ao encontrar tree: {}", e))?;
+    if analysis.is_fast_forward() {
+        let local_ref_name = head.name()
+            .ok_or("Falha ao ler ref do HEAD")?
+            .to_string();
+        let mut local_ref = repo.find_reference(&local_ref_name)
+            .map_err(|e| format!("Falha ao encontrar ref local: {}", e))?;
+        local_ref.set_target(remote_commit.id(), "pull: fast-forward")
+            .map_err(|e| format!("Falha ao atualizar branch: {}", e))?;
+        repo.set_head(&local_ref_name)
+            .map_err(|e| format!("Falha ao atualizar HEAD: {}", e))?;
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+            .map_err(|e| format!("Falha ao fazer checkout: {}", e))?;
+        return Ok(format!("Fast-forward para origin/{}.", branch_name));
+    }
 
-    repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        &format!("Merge pull from origin"),
-        &tree,
-        &[&head_commit, &fetch_commit],
-    ).map_err(|e| format!("Falha ao commitar merge: {}", e))?;
-
-    Ok(())
+    Err(format!(
+        "O branch 'origin/{}' divergiu do local. Pull não é possível via fast-forward. Resolva manualmente com git merge ou git rebase.",
+        branch_name
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1267,6 +1361,7 @@ pub fn run() {
         .manage(Arc::new(LspManager::new()))
         .manage(Arc::new(TerminalManager::new()))
         .manage(Mutex::new(LlmState::default()))
+        .manage(Mutex::new(WatcherState::default()))
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -1311,6 +1406,8 @@ pub fn run() {
             lsp_document_symbols,
             lsp_format_document,
             search_files,
+            watch_workspace,
+            unwatch_workspace,
             terminal_spawn,
             terminal_write,
             terminal_resize,

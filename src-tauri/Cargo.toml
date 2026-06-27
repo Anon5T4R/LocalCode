@@ -1,6 +1,6 @@
 [package]
 name = "code"
-version = "0.4.9"
+version = "0.5.1"
 description = "LocalCode - A lightweight, fast code editor"
 authors = ["you"]
 edition = "2021"
@@ -30,6 +30,8 @@ lsp-types = "0.95"
 portable-pty = "0.8"
 futures-util = "0.3"
 regex = "1"
+ignore = "0.4"
+notify = { version = "6", features = [] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

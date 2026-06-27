@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, memo } from "react";
+import { useRef, useCallback, useEffect, useState, memo } from "react";
 import Editor, { OnMount, OnChange } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import "../lib/monaco-setup";
@@ -43,6 +43,16 @@ export const MonacoWrapper = memo(function MonacoWrapper({
   const versionRef = useRef(1);
   const lspLangRef = useRef<string | null>(null);
   const providersRegistered = useRef(false);
+  const [monacoTheme, setMonacoTheme] = useState(() => themeFromAttr());
+
+  // Keep the editor theme in sync with the app theme (data-theme attribute)
+  useEffect(() => {
+    const update = () => setMonacoTheme(themeFromAttr());
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Start LSP when language/file changes
   useEffect(() => {
@@ -404,7 +414,7 @@ export const MonacoWrapper = memo(function MonacoWrapper({
       value={value}
       onChange={handleChange}
       onMount={handleMount}
-      theme="vs-dark"
+      theme={monacoTheme}
       options={{
         fontSize: 14,
         fontFamily:
@@ -430,6 +440,13 @@ export const MonacoWrapper = memo(function MonacoWrapper({
     />
   );
 });
+
+function themeFromAttr(): string {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "light") return "vs";
+  if (t === "high-contrast") return "hc-black";
+  return "vs-dark";
+}
 
 function mapLspKindToMonaco(
   kind: string,

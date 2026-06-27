@@ -75,8 +75,8 @@ export const GitPanel = memo(function GitPanel({ repoPath }: GitPanelProps) {
   const handlePull = useCallback(async () => {
     if (!repoPath) return;
     try {
-      await pull(repoPath);
-      setMessage("Pull realizado!");
+      const msg = await pull(repoPath);
+      setMessage(msg);
       refresh();
     } catch (e) {
       setMessage(`Erro: ${e}`);
