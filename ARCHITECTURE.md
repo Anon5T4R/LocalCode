@@ -93,11 +93,12 @@ Roda um modelo local GGUF via **`llama-server`** (API compatível com OpenAI em 
 
 ```bash
 npm install
-npm run tauri dev      # desenvolvimento
-npm run tauri build    # release (NSIS)
+npm run tauri dev                          # desenvolvimento
+npm run tauri build                        # release (Windows → NSIS)
+npm run tauri build -- --bundles appimage  # release (Linux → AppImage; rodar no Linux/WSL)
 ```
 
-CI (`.github/workflows/build.yml`) baixa `rust-analyzer` e `llama-server` e os empacota como `resources` do bundle (`binaries/llama/**`, `lsp-packages/**`), resolvidos em runtime por `resolve_llama_server` / `resolve_lsp_resource_dir`.
+CI (`.github/workflows/build.yml`) tem dois jobs disparados por tags `v*`: **`build-windows`** (NSIS) e **`build-linux`** (AppImage em `ubuntu-22.04`). Cada um baixa as versões corretas (por SO) de `rust-analyzer`, `gopls`, Dart SDK e `llama-server`, marca os binários nativos como executáveis e os empacota como `resources` do bundle (`binaries/llama/**`, `lsp-packages/**`), resolvidos em runtime por `resolve_llama_server` / `resolve_lsp_resource_dir`. `find_bundled_lsp` (`lsp.rs`) resolve o nome do binário por plataforma (`.exe`/`.cmd` no Windows, sem sufixo no Unix). AppImage **não pode** ser gerado a partir do Windows. No Linux, `pylsp` não é embutido (sem Python embeddable) — usa o PATH.
 
 Segurança/CSP (`tauri.conf.json`): `connect-src` permite `'self'` e `http://127.0.0.1:8090`–`8099` — a IA escolhe a primeira porta livre nessa faixa, então a CSP libera o intervalo inteiro.
 

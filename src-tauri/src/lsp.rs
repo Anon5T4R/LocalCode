@@ -891,54 +891,56 @@ pub fn resolve_command(language: &str, resource_dir: &std::path::Path) -> Result
     Ok((base_cmd.to_string(), args))
 }
 
+/// Append the platform executable suffix (`.exe` on Windows, nothing elsewhere).
+fn exe_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{}.exe", name)
+    } else {
+        name.to_string()
+    }
+}
+
 /// Returns (exe, extra_args_to_prepend) for a bundled LSP, or None if not found.
 fn find_bundled_lsp(resource_dir: &std::path::Path, server_name: &str) -> Option<(String, Vec<String>)> {
     match server_name {
         "rust-analyzer" => {
-            let p = resource_dir.join("lsp-packages/bin/rust-analyzer.exe");
-            if p.exists() {
-                Some((p.to_string_lossy().to_string(), vec![]))
-            } else {
-                None
-            }
+            let p = resource_dir.join(format!("lsp-packages/bin/{}", exe_name("rust-analyzer")));
+            p.exists().then(|| (p.to_string_lossy().to_string(), vec![]))
         }
         "gopls" => {
-            let p = resource_dir.join("lsp-packages/bin/gopls.exe");
-            if p.exists() {
-                Some((p.to_string_lossy().to_string(), vec![]))
-            } else {
-                None
-            }
+            let p = resource_dir.join(format!("lsp-packages/bin/{}", exe_name("gopls")));
+            p.exists().then(|| (p.to_string_lossy().to_string(), vec![]))
         }
         "pylsp" => {
+            // Bundled only on Windows (Python embeddable). Elsewhere fall back to PATH.
             let py = resource_dir.join("lsp-packages/python/python.exe");
-            if py.exists() {
+            if cfg!(windows) && py.exists() {
                 Some((py.to_string_lossy().to_string(), vec!["-m".into(), "pylsp".into()]))
             } else {
                 None
             }
         }
-        // npm-based LSPs: invoke via cmd /c on Windows
+        // npm-based LSPs: a `.cmd` shim invoked via `cmd /c` on Windows; on
+        // Unix the `.bin/<name>` script is executed directly (needs node on PATH).
         "typescript-language-server"
         | "yaml-language-server"
         | "vscode-html-language-server"
         | "vscode-css-language-server"
         | "vscode-json-language-server" => {
-            let rel = format!("lsp-packages/node_modules/.bin/{}.cmd", server_name);
-            let p = resource_dir.join(&rel);
-            if p.exists() {
-                Some(("cmd".into(), vec!["/c".into(), p.to_string_lossy().to_string()]))
+            if cfg!(windows) {
+                let p = resource_dir.join(format!("lsp-packages/node_modules/.bin/{}.cmd", server_name));
+                p.exists().then(|| ("cmd".into(), vec!["/c".into(), p.to_string_lossy().to_string()]))
             } else {
-                None
+                let p = resource_dir.join(format!("lsp-packages/node_modules/.bin/{}", server_name));
+                p.exists().then(|| (p.to_string_lossy().to_string(), vec![]))
             }
         }
         "dart" => {
-            let p = resource_dir.join("lsp-packages/dart-sdk/bin/dart.exe");
-            if p.exists() {
-                Some((p.to_string_lossy().to_string(), vec!["language-server".into(), "--protocol=stdio".into()]))
-            } else {
-                None
-            }
+            let p = resource_dir.join(format!("lsp-packages/dart-sdk/bin/{}", exe_name("dart")));
+            p.exists().then(|| (
+                p.to_string_lossy().to_string(),
+                vec!["language-server".into(), "--protocol=stdio".into()],
+            ))
         }
         _ => None, // no bundled resource (fallback to PATH)
     }

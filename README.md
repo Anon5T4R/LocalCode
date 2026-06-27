@@ -24,9 +24,14 @@ npm install
 # Run in development mode
 npm run tauri dev
 
-# Build for production
+# Build for production (Windows: NSIS installer)
 npm run tauri build
+
+# Build a Linux AppImage (run on Linux/WSL)
+npm run tauri build -- --bundles appimage
 ```
+
+> Os instaladores são gerados na plataforma correspondente: **NSIS (.exe)** no Windows e **AppImage** no Linux — não é possível gerar um AppImage a partir do Windows. O workflow `.github/workflows/build.yml` builda os dois (jobs `build-windows` e `build-linux`) e anexa ambos à release ao publicar uma tag `v*`.
 
 ## Prerequisites
 
