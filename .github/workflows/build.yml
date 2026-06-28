@@ -108,6 +108,7 @@ jobs:
             !**/*.pdb
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: LocalCode ${{ github.ref_name }}
@@ -118,7 +119,6 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-22.04
-    needs: build-windows
 
     steps:
       - uses: actions/checkout@v4
@@ -190,9 +190,10 @@ jobs:
           chmod +x src-tauri/binaries/llama/llama-server
 
       - name: Build AppImage
-        run: npm run tauri build -- --bundles appimage
+        run: npm run tauri build -- --verbose --bundles appimage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -201,6 +202,7 @@ jobs:
           path: src-tauri/target/release/bundle/appimage/*.AppImage
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: LocalCode ${{ github.ref_name }}
