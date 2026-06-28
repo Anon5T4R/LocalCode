@@ -119,6 +119,9 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-22.04
+    # On tag builds this serializes release publishing (Windows creates the
+    # release, Linux appends the AppImage) avoiding a create race.
+    needs: build-windows
 
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +199,7 @@ jobs:
           sudo ldconfig
 
       - name: Build AppImage
-        run: npm run tauri build -- --verbose --bundles appimage
+        run: npm run tauri build -- --bundles appimage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
