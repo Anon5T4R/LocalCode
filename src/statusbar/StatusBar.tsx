@@ -1,10 +1,9 @@
 import { memo } from "react";
 import { basename } from "../lib/path";
+import { useCursor } from "../lib/cursor";
 
 interface StatusBarProps {
   language?: string;
-  line?: number;
-  column?: number;
   filePath?: string | null;
   gitBranch?: string;
   encoding?: string;
@@ -13,13 +12,13 @@ interface StatusBarProps {
 
 export const StatusBar = memo(function StatusBar({
   language = "Plain Text",
-  line = 1,
-  column = 1,
   filePath,
   gitBranch,
   encoding = "UTF-8",
   indent = "Espaços: 2",
 }: StatusBarProps) {
+  // Subscribed here (not passed from App) so caret moves don't re-render App.
+  const { line, col: column } = useCursor();
   return (
     <div className="status-bar">
       <div className="status-bar-left">

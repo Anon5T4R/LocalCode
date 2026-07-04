@@ -7,8 +7,13 @@ import { Breadcrumbs } from "./editor/Breadcrumbs";
 import { FileExplorer } from "./explorer/FileExplorer";
 import { GitPanel } from "./git/GitPanel";
 import { GitHubPanel } from "./github/GitHubPanel";
-import { TerminalPanel } from "./terminal/TerminalPanel";
+import { TerminalPanel, type TerminalAdoption } from "./terminal/TerminalPanel";
 import { StatusBar } from "./statusbar/StatusBar";
+import { DebugPanel } from "./debug/DebugPanel";
+import { debugController } from "./debug/controller";
+import { useDebugSelector } from "./debug/useDebug";
+import { spawnTerminal } from "./lib/terminal";
+import { cursorStore } from "./lib/cursor";
 import { OutlinePanel } from "./outline/OutlinePanel";
 import { SearchPanel } from "./search/SearchPanel";
 import { AiPanel } from "./ai/AiPanel";
@@ -31,6 +36,7 @@ const _savedTheme = loadSettings().theme;
 if (_savedTheme) document.documentElement.setAttribute("data-theme", _savedTheme);
 
 const TAB_ID = () => crypto.randomUUID();
+const NO_LINES: number[] = [];
 
 function newTab(filePath?: string, content?: string): Tab {
   const name = filePath ? basename(filePath) : "sem-titulo";
@@ -79,9 +85,9 @@ function App() {
   const [showAi, setShowAi] = useState(false);
   const [showLspSetup, setShowLspSetup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [termAdoptions, setTermAdoptions] = useState<TerminalAdoption[]>([]);
   const [gitBranch, setGitBranch] = useState<string>("");
-  const [cursorLine, setCursorLine] = useState(1);
-  const [cursorCol, setCursorCol] = useState(1);
   const [gotoLine, setGotoLine] = useState<number | null>(null);
   const [tabCtx, setTabCtx] = useState<{ id: string; x: number; y: number } | null>(null);
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
@@ -96,7 +102,17 @@ function App() {
   tabsRef.current = tabs;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+  const rootPathRef = useRef(rootPath);
+  rootPathRef.current = rootPath;
   const cursorPositionsRef = useRef<Record<string, { line: number; col: number }>>({});
+  // Live buffer per tab id. The editor writes here on every keystroke; React
+  // state (`Tab.content`) is only touched on open/save/reload and when the
+  // dirty flag flips — so typing doesn't re-render the whole app.
+  const contentsRef = useRef(new Map<string, string>());
+  const liveContent = useCallback(
+    (tab: Tab) => contentsRef.current.get(tab.id) ?? tab.content,
+    []
+  );
 
   // Reset gotoLine after MonacoWrapper consumes it
   useEffect(() => {
@@ -140,11 +156,13 @@ function App() {
     setTabs((ts) =>
       ts.map((t) => {
         if (t.path !== path) return t;
+        const current = contentsRef.current.get(t.id) ?? t.content;
         if (t.dirty) {
           // Don't discard unsaved work; only flag if disk actually diverged.
-          return content === t.content ? t : { ...t, externallyChanged: true };
+          return content === current ? t : { ...t, externallyChanged: true };
         }
-        if (content === t.content) return t; // no change, avoid needless render
+        if (content === current) return t; // no change, avoid needless render
+        contentsRef.current.set(t.id, content);
         return { ...t, content, savedContent: content, dirty: false, externallyChanged: false };
       })
     );
@@ -206,7 +224,8 @@ function App() {
       filePath = selected;
     }
     try {
-      await writeFile(filePath, tab.content);
+      const content = contentsRef.current.get(tab.id) ?? tab.content;
+      await writeFile(filePath, content);
       const ext = (filePath.split(".").pop() || "");
       setTabs((ts) =>
         ts.map((t) =>
@@ -217,7 +236,8 @@ function App() {
                 title: basename(filePath),
                 language: extToLanguage(ext),
                 dirty: false,
-                savedContent: t.content,
+                content,
+                savedContent: content,
                 externallyChanged: false,
               }
             : t
@@ -250,6 +270,7 @@ function App() {
 
     // Free the Monaco model that backed this tab (kept alive by keepCurrentModel).
     setModelToDispose(t.path ?? `untitled:${t.id}`);
+    contentsRef.current.delete(t.id);
 
     const idx = tabsRef.current.findIndex((x) => x.id === id);
     const remaining = tabsRef.current.filter((x) => x.id !== id);
@@ -277,12 +298,68 @@ function App() {
     if (!ok) return;
     try {
       const content = await readFile(tab.path);
+      contentsRef.current.set(id, content);
       setTabs((ts) =>
         ts.map((t) =>
           t.id === id ? { ...t, content, savedContent: content, dirty: false, externallyChanged: false } : t
         )
       );
     } catch { /* file gone; leave as-is */ }
+  }, []);
+
+  // ---- Editor callbacks (stable so MonacoWrapper's memo holds while typing) ----
+  const handleCursorPosition = useCallback((line: number, col: number) => {
+    cursorStore.set(line, col);
+    const tab = tabsRef.current.find((t) => t.id === activeIdRef.current);
+    if (tab?.path) cursorPositionsRef.current[tab.path] = { line, col };
+  }, []);
+
+  const handleEditorChange = useCallback((val: string) => {
+    const id = activeIdRef.current;
+    contentsRef.current.set(id, val);
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (!tab) return;
+    const dirty = val !== tab.savedContent;
+    if (dirty !== tab.dirty) {
+      setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, dirty } : t)));
+    }
+  }, []);
+
+  const handleToggleBreakpoint = useCallback((line: number) => {
+    const tab = tabsRef.current.find((t) => t.id === activeIdRef.current);
+    if (!tab?.path) return;
+    debugController.toggleBreakpoint(tab.path, line);
+  }, []);
+
+  // ---- Debug session wiring ----
+  const debugStopped = useDebugSelector(
+    (s) => s.stopped,
+    (a, b) => a?.path === b?.path && a?.line === b?.line
+  );
+  const activeTabPath = activeTab?.path ?? null;
+  const activeBreakpoints = useDebugSelector(
+    (s) => (activeTabPath ? s.breakpoints[activeTabPath] ?? NO_LINES : NO_LINES),
+    (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
+  );
+
+  // Open + reveal the file where the debugger paused.
+  useEffect(() => {
+    if (debugStopped) openFile(debugStopped.path, debugStopped.line);
+  }, [debugStopped, openFile]);
+
+  // The adapter asks us to run the debuggee in a terminal (runInTerminal).
+  useEffect(() => {
+    debugController.setRunInTerminalHandler(async ({ argv, cwd, env, title }) => {
+      const sessionId = await spawnTerminal(cwd ?? rootPathRef.current, argv[0], argv.slice(1), env);
+      setShowTerminal(true);
+      setTermAdoptions((xs) => [...xs, { key: crypto.randomUUID(), sessionId, title: title ?? "Depuração" }]);
+    });
+  }, []);
+
+  const startDebug = useCallback(() => {
+    const tab = tabsRef.current.find((t) => t.id === activeIdRef.current);
+    setShowDebug(true);
+    debugController.start(tab?.path ?? null, rootPathRef.current);
   }, []);
 
   // ---- Open folder dialog ----
@@ -400,6 +477,31 @@ function App() {
   // ---- Keyboard shortcuts ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Debug function keys (VS Code-compatible)
+      if (e.key === "F5") {
+        e.preventDefault();
+        if (e.shiftKey) { debugController.stop(); return; }
+        const st = debugController.getState().status;
+        if (st === "stopped") debugController.continue_();
+        else if (st === "inactive" || st === "ended") startDebug();
+        return;
+      }
+      if (e.key === "F9") {
+        e.preventDefault();
+        handleToggleBreakpoint(cursorStore.get().line);
+        return;
+      }
+      if (e.key === "F10" && debugController.getState().status === "stopped") {
+        e.preventDefault();
+        debugController.next();
+        return;
+      }
+      if (e.key === "F11" && debugController.getState().status === "stopped") {
+        e.preventDefault();
+        if (e.shiftKey) debugController.stepOut();
+        else debugController.stepIn();
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
       if (k === "s") {
@@ -438,6 +540,13 @@ function App() {
         setShowAi(false);
         setShowLspSetup(false);
         setShowGit(false);
+      } else if (e.shiftKey && k === "d") {
+        e.preventDefault();
+        setShowDebug((v) => !v);
+        setShowAi(false);
+        setShowLspSetup(false);
+        setShowGit(false);
+        setShowGitHub(false);
       } else if (e.shiftKey && k === "f") {
         e.preventDefault();
         setShowSearch((v) => !v);
@@ -468,7 +577,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [saveFile, openFolder, closeTab, extCommands]);
+  }, [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint]);
 
   // ---- Command palette registry ----
   const paletteCommands: PaletteCommand[] = useMemo(() => [
@@ -476,6 +585,9 @@ function App() {
     { id: "file.openFolder", label: "Abrir pasta", hint: "Ctrl+K Ctrl+O", run: () => openFolder() },
     { id: "file.newTab", label: "Nova aba", run: () => { const t = newTab(); setTabs((ts) => [...ts, t]); setActiveId(t.id); } },
     { id: "file.closeTab", label: "Fechar aba", hint: "Ctrl+W", run: () => closeTab(activeIdRef.current) },
+    { id: "debug.start", label: "Depurar arquivo atual", hint: "F5", run: () => startDebug() },
+    { id: "debug.toggleBreakpoint", label: "Alternar ponto de parada", hint: "F9", run: () => handleToggleBreakpoint(cursorStore.get().line) },
+    { id: "view.debug", label: "Alternar painel de depuração", hint: "Ctrl+Shift+D", run: () => setShowDebug((v) => !v) },
     { id: "view.terminal", label: "Alternar terminal", hint: "Ctrl+`", run: () => setShowTerminal((v) => !v) },
     { id: "view.search", label: "Alternar busca", hint: "Ctrl+Shift+F", run: () => setShowSearch((v) => !v) },
     { id: "view.git", label: "Alternar Git", hint: "Ctrl+Shift+G", run: () => setShowGit((v) => !v) },
@@ -489,7 +601,7 @@ function App() {
       hint: c.keybindings?.[0],
       run: () => dispatchExtCommand(c, setExtPanelVis),
     })),
-  ], [saveFile, openFolder, closeTab, extCommands]);
+  ], [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint]);
 
   return (
     <div className="app">
@@ -559,6 +671,9 @@ function App() {
           <button className="action-btn" onClick={saveFile} disabled={!activeTab?.dirty} title="Salvar (Ctrl+S)">
             💾
           </button>
+          <button className="action-btn" onClick={() => setShowDebug((v) => !v)} title="Depuração (Ctrl+Shift+D / F5)">
+            🐞
+          </button>
           <button className="action-btn" onClick={() => setShowAi((v) => !v)} title="AI (Ctrl+Shift+I)">
             AI
           </button>
@@ -616,7 +731,6 @@ function App() {
               <Breadcrumbs
                 filePath={activeTab.path}
                 rootPath={rootPath}
-                cursorLine={cursorLine}
                 onSelect={(line) => setGotoLine(line + 1)}
               />
             )}
@@ -624,28 +738,16 @@ function App() {
               <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
               <MonacoWrapper
                 language={activeTab.language}
-                value={activeTab.content}
+                value={liveContent(activeTab)}
                 path={activeTab.path ?? `untitled:${activeTab.id}`}
                 workspaceRoot={rootPath}
                 gotoLine={gotoLine}
                 disposeModelPath={modelToDispose}
-                onCursorPosition={(line, col) => {
-                  setCursorLine(line);
-                  setCursorCol(col);
-                  const tab = tabsRef.current.find((t) => t.id === activeIdRef.current);
-                  if (tab?.path) {
-                    cursorPositionsRef.current[tab.path] = { line, col };
-                  }
-                }}
-                onChange={(val) => {
-                  setTabs((ts) =>
-                    ts.map((t) =>
-                      t.id === activeIdRef.current
-                        ? { ...t, content: val, dirty: val !== t.savedContent }
-                        : t
-                    )
-                  );
-                }}
+                breakpoints={activeBreakpoints}
+                onToggleBreakpoint={handleToggleBreakpoint}
+                execLine={debugStopped && debugStopped.path === activeTab.path ? debugStopped.line : null}
+                onCursorPosition={handleCursorPosition}
+                onChange={handleEditorChange}
               />
               </div>
             )}
@@ -653,13 +755,24 @@ function App() {
 
           {/* Terminal */}
           {showTerminal && (
-            <TerminalPanel workspaceRoot={rootPath} onClose={() => setShowTerminal(false)} />
+            <TerminalPanel
+              workspaceRoot={rootPath}
+              onClose={() => setShowTerminal(false)}
+              adoptions={termAdoptions}
+            />
           )}
         </div>
 
         {/* Right panels */}
-        {(showGit || showGitHub || showAi || showLspSetup || showSettings || Object.values(extPanelVis).some(Boolean)) && (
+        {(showGit || showGitHub || showAi || showLspSetup || showSettings || showDebug || Object.values(extPanelVis).some(Boolean)) && (
           <div className="side-panel">
+            {showDebug && (
+              <DebugPanel
+                activeFilePath={activeTab?.path ?? null}
+                workspaceRoot={rootPath}
+                onOpenFile={openFile}
+              />
+            )}
             {showGit && <GitPanel repoPath={repoPath} />}
             {showGitHub && <GitHubPanel repoPath={repoPath} />}
             {showAi && <AiPanel workspaceRoot={rootPath} onRefresh={() => setFileTreeVersion((v) => v + 1)} onFileChanged={syncTabFromDisk} />}
@@ -689,8 +802,6 @@ function App() {
         language={activeTab?.language}
         filePath={activeTab?.path}
         gitBranch={gitBranch}
-        line={cursorLine}
-        column={cursorCol}
       />
     </div>
   );

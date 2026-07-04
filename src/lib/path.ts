@@ -7,7 +7,9 @@ export function dirname(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
   parts.pop();
-  return parts.join("/") || ".";
+  const joined = parts.join("/");
+  if (normalized.startsWith("/")) return "/" + joined; // absolute Unix path
+  return joined || ".";
 }
 
 export function joinPath(...parts: string[]): string {

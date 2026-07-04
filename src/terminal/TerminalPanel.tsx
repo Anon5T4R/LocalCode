@@ -7,28 +7,54 @@ import {
   onTerminalOutput, onTerminalExit,
 } from "../lib/terminal";
 
+/** A pre-spawned PTY session the panel should attach to (debugger runInTerminal). */
+export interface TerminalAdoption {
+  key: string;
+  sessionId: string;
+  title?: string;
+}
+
 interface TerminalPanelProps {
   workspaceRoot?: string | null;
   onClose: () => void;
+  adoptions?: TerminalAdoption[];
 }
 
-export function TerminalPanel({ workspaceRoot, onClose }: TerminalPanelProps) {
-  const [keys, setKeys] = useState<string[]>(() => [crypto.randomUUID()]);
-  const [activeKey, setActiveKey] = useState(keys[0]);
+interface TermEntry {
+  key: string;
+  adoptSessionId?: string;
+  title?: string;
+}
+
+export function TerminalPanel({ workspaceRoot, onClose, adoptions }: TerminalPanelProps) {
+  const [keys, setKeys] = useState<TermEntry[]>(() => [{ key: crypto.randomUUID() }]);
+  const [activeKey, setActiveKey] = useState(keys[0].key);
+
+  // Attach terminals handed to us from outside (debugger runInTerminal).
+  useEffect(() => {
+    if (!adoptions || adoptions.length === 0) return;
+    setKeys((ks) => {
+      const known = new Set(ks.map((k) => k.key));
+      const fresh = adoptions.filter((a) => !known.has(a.key));
+      if (fresh.length === 0) return ks;
+      setActiveKey(fresh[fresh.length - 1].key);
+      return [...ks, ...fresh.map((a) => ({ key: a.key, adoptSessionId: a.sessionId, title: a.title }))];
+    });
+  }, [adoptions]);
 
   // Reconcile active terminal / close panel when empty
   useEffect(() => {
     if (keys.length === 0) { onClose(); return; }
-    if (!keys.includes(activeKey)) setActiveKey(keys[keys.length - 1]);
+    if (!keys.some((k) => k.key === activeKey)) setActiveKey(keys[keys.length - 1].key);
   }, [keys, activeKey, onClose]);
 
   const addTerm = () => {
     const k = crypto.randomUUID();
-    setKeys((ks) => [...ks, k]);
+    setKeys((ks) => [...ks, { key: k }]);
     setActiveKey(k);
   };
 
-  const closeTerm = (k: string) => setKeys((ks) => ks.filter((x) => x !== k));
+  const closeTerm = (k: string) => setKeys((ks) => ks.filter((x) => x.key !== k));
 
   return (
     <div className="terminal-panel">
@@ -36,20 +62,20 @@ export function TerminalPanel({ workspaceRoot, onClose }: TerminalPanelProps) {
         <div className="terminal-tabs" style={{ display: "flex", gap: 2, alignItems: "center", overflowX: "auto" }}>
           {keys.map((k, i) => (
             <div
-              key={k}
-              className={`terminal-tab ${k === activeKey ? "active" : ""}`}
-              onClick={() => setActiveKey(k)}
+              key={k.key}
+              className={`terminal-tab ${k.key === activeKey ? "active" : ""}`}
+              onClick={() => setActiveKey(k.key)}
               style={{
                 display: "flex", alignItems: "center", gap: 4, padding: "2px 8px",
                 cursor: "pointer", fontSize: 12, borderRadius: 4,
-                background: k === activeKey ? "var(--bg-active, #2a2a2a)" : "transparent",
-                color: k === activeKey ? "var(--text-primary, #ddd)" : "var(--text-secondary, #999)",
+                background: k.key === activeKey ? "var(--bg-active, #2a2a2a)" : "transparent",
+                color: k.key === activeKey ? "var(--text-primary, #ddd)" : "var(--text-secondary, #999)",
               }}
             >
-              Terminal {i + 1}
+              {k.title ?? `Terminal ${i + 1}`}
               <button
                 className="terminal-tab-close"
-                onClick={(e) => { e.stopPropagation(); closeTerm(k); }}
+                onClick={(e) => { e.stopPropagation(); closeTerm(k.key); }}
                 style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 11 }}
                 title="Fechar terminal"
               >
@@ -71,10 +97,11 @@ export function TerminalPanel({ workspaceRoot, onClose }: TerminalPanelProps) {
       <div className="terminal-body" style={{ position: "relative", flex: 1, minHeight: 0 }}>
         {keys.map((k) => (
           <TerminalInstance
-            key={k}
-            active={k === activeKey}
+            key={k.key}
+            active={k.key === activeKey}
             workspaceRoot={workspaceRoot}
-            onExit={() => closeTerm(k)}
+            adoptSessionId={k.adoptSessionId}
+            onExit={() => closeTerm(k.key)}
           />
         ))}
       </div>
@@ -85,10 +112,12 @@ export function TerminalPanel({ workspaceRoot, onClose }: TerminalPanelProps) {
 interface TerminalInstanceProps {
   active: boolean;
   workspaceRoot?: string | null;
+  /** Attach to an already-spawned PTY session instead of spawning a shell. */
+  adoptSessionId?: string;
   onExit: () => void;
 }
 
-function TerminalInstance({ active, workspaceRoot, onExit }: TerminalInstanceProps) {
+function TerminalInstance({ active, workspaceRoot, adoptSessionId, onExit }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -136,7 +165,11 @@ function TerminalInstance({ active, workspaceRoot, onExit }: TerminalInstancePro
     let unlistenOutput: (() => void) | undefined;
     let unlistenExit: (() => void) | undefined;
 
-    spawnTerminal(workspaceRoot ?? null)
+    const sessionPromise = adoptSessionId
+      ? Promise.resolve(adoptSessionId)
+      : spawnTerminal(workspaceRoot ?? null);
+
+    sessionPromise
       .then((id) => {
         sessionRef.current = id;
         term.focus();

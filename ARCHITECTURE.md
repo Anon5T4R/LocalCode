@@ -1,6 +1,6 @@
 # LocalCode — Arquitetura
 
-Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **React 19 / Vite** (frontend) e **Monaco** como editor. Tudo roda localmente: LSP, IA (via `llama-server`), Git e terminal. UI em português.
+Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **React 19 / Vite** (frontend) e **Monaco** como editor. Tudo roda localmente: LSP, **debugger (DAP)**, IA (via `llama-server`), Git e terminal. UI em português.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -25,7 +25,7 @@ Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **
 
 ## Frontend (`src/`)
 
-- **`App.tsx`** — componente raiz. Detém o estado global: abas (`Tab[]`), pasta raiz, visibilidade dos painéis, branch do git (polling 5s), posição do cursor. Responsável por: abrir/salvar/fechar abas, restaurar sessão na inicialização, interceptar o fechamento da janela (confirma abas sujas), auto-salvar a sessão (debounce 500ms) e os atalhos de teclado globais.
+- **`App.tsx`** — componente raiz. Detém o estado global: abas (`Tab[]`), pasta raiz, visibilidade dos painéis, branch do git. Responsável por: abrir/salvar/fechar abas, restaurar sessão na inicialização, interceptar o fechamento da janela (confirma abas sujas), auto-salvar a sessão (debounce 500ms) e os atalhos de teclado globais. **Caminho de digitação otimizado**: o buffer vivo de cada aba fica num `contentsRef` (Map por id) e o cursor num store externo (`lib/cursor.ts`, assinado direto por `StatusBar`/`Breadcrumbs`) — digitar/mover o cursor **não** re-renderiza o App; `Tab.content` no state só muda em abrir/salvar/recarregar, e `setTabs` por tecla só ocorre quando o flag `dirty` vira. Todos os leitores de conteúdo (salvar, sync de disco) usam o ref como fonte da verdade.
 - **`editor/MonacoWrapper.tsx`** — embrulha `@monaco-editor/react`. Registra *uma vez* providers Monaco (`"*"` para todas as linguagens) que delegam ao LSP via backend: completion, hover, signature help, code action, definition, references, formatting (lêem o path atual via `pathRef`, pois o editor não remonta mais por aba). Usa `path` + `keepCurrentModel` → **um `ITextModel` por arquivo**, preservando undo/scroll/folding ao trocar de aba. `onChange` dispara `didChange` e aplica diagnósticos como markers. O tema segue `data-theme` via `MutationObserver`.
 - **`editor/Breadcrumbs.tsx`** — barra acima do editor com os segmentos do caminho + a cadeia de símbolos (LSP `documentSymbols`) que envolve o cursor; clicar num símbolo navega até ele.
 - **`explorer/FileExplorer.tsx`** — árvore de arquivos lazy (carrega filhos ao expandir). Criar/renomear/excluir + menu de contexto. `refreshSignal` (número incremental) força re-scan da raiz e das pastas expandidas.
@@ -75,6 +75,18 @@ Roda um modelo local GGUF via **`llama-server`** (API compatível com OpenAI em 
 5. `streamChat` faz parse do SSE e separa `<think>...</think>` (raciocínio) do conteúdo.
 
 > O system prompt é **fortemente enviesado para Rust** ("SEMPRE prefira Rust"). É uma escolha de produto deliberada; ajuste em `src/ai/agent.ts` se quiser um agente neutro.
+
+## Camada de depuração (DAP)
+
+Debugger integrado via **Debug Adapter Protocol**, pensado para funcionar sem configuração (F5 depura o arquivo atual) e 100% offline. Divisão de responsabilidades:
+
+- **`src-tauri/src/dap.rs`** — só o *transporte*: spawna o adaptador (stdio ou TCP com retry), faz o framing `Content-Length` (o mesmo do LSP), roteia respostas por `request_seq` (mapa de `oneshot`) e encaminha eventos/reverse-requests ao frontend como eventos Tauri `dap-message`/`dap-exit`. Comandos: `dap_start`, `dap_connect` (sessões filhas TCP), `dap_request`, `dap_respond`, `dap_kill`, `check_debug_adapters`. Os processos dos adaptadores são mortos no `RunEvent::Exit`.
+- **`src/debug/controller.ts`** — a *lógica* do protocolo, num singleton observável fora do React (a sessão sobrevive ao painel fechado; atalhos funcionam de qualquer lugar): initialize → launch → (`initialized`) setBreakpoints + setExceptionBreakpoints + configurationDone; eventos `stopped` (stack/scopes/variáveis), `output`, `terminated`; reverse requests `runInTerminal` (roda o programa num terminal do app — stdin funciona) e `startDebugging` (sessões filhas do js-debug/debugpy via nova conexão TCP). Também infere o launch config: `.py` → debugpy; `.js/.mjs/.cjs` → js-debug (`pwa-node`); `.rs` → `cargo build` + CodeLLDB; `.c/.cpp` → compila com gcc/clang e depura com CodeLLDB.
+- **`src/debug/DebugPanel.tsx`** — UI em PT para iniciantes: botão único "Depurar arquivo atual", toolbar (continuar/próximo/entrar/sair/parar), variáveis expansíveis, pilha de chamadas, pontos de parada, console com REPL (`evaluate`) e banner de exceção em linguagem simples.
+- **`MonacoWrapper`** — `glyphMargin` habilitado; clique na margem/número da linha alterna breakpoint (`onMouseDown` + `deltaDecorations` via `createDecorationsCollection`); a linha pausada ganha destaque (`dbg-exec-line`) e reveal.
+- **Atalhos**: F5 inicia/continua, Shift+F5 para, F9 alterna breakpoint, F10 próximo, F11/Shift+F11 entra/sai, Ctrl+Shift+D alterna o painel.
+
+**Adaptadores embutidos** (resolvidos por `resolve_adapter` em `dap.rs`, bundled-first com fallback para o PATH): debugpy instalado no Python embeddable que já acompanha o pylsp (Windows; no Linux usa `python3 -m debugpy.adapter` do sistema), js-debug (`lsp-packages/js-debug`, precisa de Node no PATH, igual aos LSPs npm) e CodeLLDB (`lsp-packages/codelldb`, Rust/C/C++). Limitação conhecida: breakpoints são âncoras por número de linha no estado do app — editar o arquivo acima de um breakpoint não o desloca.
 
 ## Sistema de extensões
 

@@ -14,6 +14,9 @@ use lsp::LspManager;
 mod terminal;
 use terminal::TerminalManager;
 
+mod dap;
+use dap::DapManager;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -1188,8 +1191,98 @@ async fn terminal_spawn(
     app: tauri::AppHandle,
     cwd: Option<String>,
     shell: Option<String>,
+    args: Option<Vec<String>>,
+    env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
-    manager.spawn(app, cwd, shell).await
+    manager.spawn(app, cwd, shell, args, env).await
+}
+
+// ---------------------------------------------------------------------------
+// Debug Adapter Protocol
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn dap_start(
+    manager: tauri::State<'_, Arc<DapManager>>,
+    app: tauri::AppHandle,
+    language: String,
+) -> Result<dap::DapStartInfo, String> {
+    let rd = resolve_lsp_resource_dir(&app);
+    manager.start(app.clone(), &language, &rd).await
+}
+
+#[tauri::command]
+async fn dap_connect(
+    manager: tauri::State<'_, Arc<DapManager>>,
+    app: tauri::AppHandle,
+    port: u16,
+) -> Result<dap::DapStartInfo, String> {
+    manager.connect(app.clone(), port).await
+}
+
+#[tauri::command]
+async fn dap_request(
+    manager: tauri::State<'_, Arc<DapManager>>,
+    session_id: String,
+    command: String,
+    arguments: Option<serde_json::Value>,
+    timeout_ms: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    manager
+        .request(
+            &session_id,
+            &command,
+            arguments.unwrap_or(serde_json::Value::Null),
+            timeout_ms.unwrap_or(30_000),
+        )
+        .await
+}
+
+#[tauri::command]
+async fn dap_respond(
+    manager: tauri::State<'_, Arc<DapManager>>,
+    session_id: String,
+    request_seq: u64,
+    command: String,
+    success: bool,
+    body: Option<serde_json::Value>,
+) -> Result<(), String> {
+    manager
+        .respond(
+            &session_id,
+            request_seq,
+            &command,
+            success,
+            body.unwrap_or(serde_json::Value::Null),
+        )
+        .await
+}
+
+#[tauri::command]
+async fn dap_kill(
+    manager: tauri::State<'_, Arc<DapManager>>,
+    session_id: String,
+) -> Result<(), String> {
+    manager.kill(&session_id).await
+}
+
+#[derive(Serialize)]
+struct DebugAdapterStatus {
+    language: String,
+    bundled: bool,
+}
+
+/// Which debug adapters ship with this install (for the debug panel hints).
+#[tauri::command]
+fn check_debug_adapters(app: tauri::AppHandle) -> Vec<DebugAdapterStatus> {
+    let rd = resolve_lsp_resource_dir(&app);
+    ["python", "javascript", "rust"]
+        .iter()
+        .map(|l| DebugAdapterStatus {
+            language: l.to_string(),
+            bundled: dap::check_bundled_adapter(&rd, l),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -1626,6 +1719,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(Arc::new(LspManager::new()))
         .manage(Arc::new(TerminalManager::new()))
+        .manage(Arc::new(DapManager::new()))
         .manage(Mutex::new(LlmState::default()))
         .manage(Mutex::new(WatcherState::default()))
         .on_window_event(|window, event| {
@@ -1683,6 +1777,12 @@ pub fn run() {
             terminal_write,
             terminal_resize,
             terminal_kill,
+            dap_start,
+            dap_connect,
+            dap_request,
+            dap_respond,
+            dap_kill,
+            check_debug_adapters,
             list_models,
             start_llm,
             stop_llm,
@@ -1706,6 +1806,10 @@ pub fn run() {
                             let _ = child.kill();
                         }
                     }
+                }
+                if let Some(dap) = app_handle.try_state::<Arc<DapManager>>() {
+                    let dap = dap.inner().clone();
+                    tauri::async_runtime::block_on(async move { dap.kill_all().await });
                 }
             }
         });

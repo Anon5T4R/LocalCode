@@ -28,6 +28,11 @@ interface MonacoWrapperProps {
   workspaceRoot?: string | null;
   /** Path of a model that should be disposed (a tab was closed). */
   disposeModelPath?: string | null;
+  /** Breakpoint lines (1-based) for the current file. */
+  breakpoints?: number[];
+  onToggleBreakpoint?: (line: number) => void;
+  /** Line where the debugger is paused in the current file (highlighted). */
+  execLine?: number | null;
 }
 
 export const MonacoWrapper = memo(function MonacoWrapper({
@@ -39,6 +44,9 @@ export const MonacoWrapper = memo(function MonacoWrapper({
   path,
   workspaceRoot,
   disposeModelPath,
+  breakpoints,
+  onToggleBreakpoint,
+  execLine,
 }: MonacoWrapperProps) {
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
@@ -50,6 +58,11 @@ export const MonacoWrapper = memo(function MonacoWrapper({
   // file, so they must read the *current* path from a ref, not a stale closure.
   const pathRef = useRef(path);
   pathRef.current = path;
+  const onToggleBreakpointRef = useRef(onToggleBreakpoint);
+  onToggleBreakpointRef.current = onToggleBreakpoint;
+  const bpDecorationsRef = useRef<monacoEditor.IEditorDecorationsCollection | null>(null);
+  const execDecorationsRef = useRef<monacoEditor.IEditorDecorationsCollection | null>(null);
+  const [mountedTick, setMountedTick] = useState(0);
   const [monacoTheme, setMonacoTheme] = useState(() => themeFromAttr());
 
   // Keep the editor theme in sync with the app theme (data-theme attribute)
@@ -368,10 +381,66 @@ export const MonacoWrapper = memo(function MonacoWrapper({
         onCursorPosition?.(e.position.lineNumber, e.position.column);
       });
 
+      // Click on the glyph margin / line number gutter toggles a breakpoint.
+      editor.onMouseDown((e) => {
+        const t = e.target.type;
+        if (
+          t === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
+          t === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS
+        ) {
+          const line = e.target.position?.lineNumber;
+          if (line) onToggleBreakpointRef.current?.(line);
+        }
+      });
+
+      bpDecorationsRef.current = editor.createDecorationsCollection();
+      execDecorationsRef.current = editor.createDecorationsCollection();
+      setMountedTick((t) => t + 1); // re-run decoration effects post-mount
+
       editor.focus();
     },
     [registerProviders, onCursorPosition]
   );
+
+  // Breakpoint decorations (re-applied when the file or the set changes).
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const coll = bpDecorationsRef.current;
+    if (!monaco || !coll) return;
+    coll.set(
+      (breakpoints ?? []).map((line) => ({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          glyphMarginClassName: "dbg-breakpoint-glyph",
+          glyphMarginHoverMessage: { value: "Ponto de parada — clique para remover" },
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      }))
+    );
+  }, [breakpoints, path, mountedTick]);
+
+  // Highlight the line where the debugger is paused.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const coll = execDecorationsRef.current;
+    if (!monaco || !coll) return;
+    if (execLine == null) {
+      coll.clear();
+      return;
+    }
+    coll.set([
+      {
+        range: new monaco.Range(execLine, 1, execLine, 1),
+        options: {
+          isWholeLine: true,
+          className: "dbg-exec-line",
+          glyphMarginClassName: "dbg-exec-glyph",
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      },
+    ]);
+    editorRef.current?.revealLineInCenterIfOutsideViewport(execLine);
+  }, [execLine, path, mountedTick]);
 
   const handleChange: OnChange = useCallback(
     (val) => {
@@ -437,6 +506,7 @@ export const MonacoWrapper = memo(function MonacoWrapper({
       onMount={handleMount}
       theme={monacoTheme}
       options={{
+        glyphMargin: true,
         fontSize: 14,
         fontFamily:
           "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",

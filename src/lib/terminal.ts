@@ -10,8 +10,18 @@ export interface TerminalExit {
   session_id: string;
 }
 
-export async function spawnTerminal(cwd?: string | null, shell?: string | null): Promise<string> {
-  return invoke<string>("terminal_spawn", { cwd: cwd ?? null, shell: shell ?? null });
+export async function spawnTerminal(
+  cwd?: string | null,
+  shell?: string | null,
+  args?: string[] | null,
+  env?: Record<string, string> | null
+): Promise<string> {
+  return invoke<string>("terminal_spawn", {
+    cwd: cwd ?? null,
+    shell: shell ?? null,
+    args: args ?? null,
+    env: env ?? null,
+  });
 }
 
 export async function writeTerminal(sessionId: string, data: string): Promise<void> {

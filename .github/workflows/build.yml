@@ -71,10 +71,29 @@ jobs:
           # Install pip + pylsp
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$env:TEMP\get-pip.py"
           & "$dest\python.exe" "$env:TEMP\get-pip.py" --no-warn-script-location 2>&1 | Out-Null
-          & "$dest\python.exe" -m pip install python-lsp-server -q 2>&1 | Out-Null
+          & "$dest\python.exe" -m pip install python-lsp-server debugpy -q 2>&1 | Out-Null
           # Cleanup pip cache to save space
           & "$dest\python.exe" -m pip cache purge -q 2>&1 | Out-Null
           Remove-Item -Recurse -Force "$dest\Lib\site-packages\pip" -ErrorAction SilentlyContinue
+
+      - name: Download js-debug (debug adapter)
+        shell: pwsh
+        run: |
+          $ver = "1.117.0"
+          $url = "https://github.com/microsoft/vscode-js-debug/releases/download/v$ver/js-debug-dap-v$ver.tar.gz"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\js-debug.tar.gz"
+          # Extracts as js-debug/src/dapDebugServer.js
+          tar -xzf "$env:TEMP\js-debug.tar.gz" -C "src-tauri\lsp-packages"
+
+      - name: Download CodeLLDB (debug adapter)
+        shell: pwsh
+        run: |
+          $ver = "1.12.2"
+          $url = "https://github.com/vadimcn/codelldb/releases/download/v$ver/codelldb-win32-x64.vsix"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\codelldb.zip"
+          Expand-Archive -Path "$env:TEMP\codelldb.zip" -DestinationPath "$env:TEMP\codelldb" -Force
+          New-Item -ItemType Directory -Path "src-tauri\lsp-packages\codelldb" -Force
+          Copy-Item -Recurse -Force "$env:TEMP\codelldb\extension\*" "src-tauri\lsp-packages\codelldb\"
 
       - name: Download Dart SDK
         shell: pwsh
@@ -176,6 +195,22 @@ jobs:
           go install golang.org/x/tools/gopls@latest
           cp "$(go env GOPATH)/bin/gopls" src-tauri/lsp-packages/bin/gopls
           chmod +x src-tauri/lsp-packages/bin/gopls
+
+      - name: Download js-debug (debug adapter, Linux)
+        run: |
+          VER=1.117.0
+          wget -qO js-debug.tar.gz "https://github.com/microsoft/vscode-js-debug/releases/download/v$VER/js-debug-dap-v$VER.tar.gz"
+          tar -xzf js-debug.tar.gz -C src-tauri/lsp-packages
+
+      - name: Download CodeLLDB (debug adapter, Linux)
+        run: |
+          VER=1.12.2
+          wget -qO codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/v$VER/codelldb-linux-x64.vsix"
+          mkdir -p codelldb-extract src-tauri/lsp-packages/codelldb
+          unzip -q codelldb.vsix -d codelldb-extract
+          cp -a codelldb-extract/extension/. src-tauri/lsp-packages/codelldb/
+          chmod +x src-tauri/lsp-packages/codelldb/adapter/codelldb
+          chmod +x src-tauri/lsp-packages/codelldb/lldb/bin/* 2>/dev/null || true
 
       - name: Download Dart SDK (Linux)
         run: |

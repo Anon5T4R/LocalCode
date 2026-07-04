@@ -6,6 +6,7 @@ A lightweight, fast code editor built with [Tauri v2](https://v2.tauri.app/), Re
 
 - **Monaco Editor** — full VS Code editor experience (syntax highlight, autocomplete, multi-cursor)
 - **LSP Integration** — intellisense for TypeScript, Rust, Python, Go, YAML, CSS, HTML, JSON
+- **Debugger (DAP)** — zero-config F5 debugging for Python (debugpy), JavaScript/Node (js-debug), Rust and C/C++ (CodeLLDB); gutter breakpoints, variables, call stack, debug console — all local/offline
 - **AI Assistant** — local LLM chat with tool-using agent (create/edit/read files, run terminal commands)
 - **Git Integration** — stage, commit, push, pull, branch management, history
 - **GitHub Integration** — authenticate, list repos, create repos, create PRs, clone

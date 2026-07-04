@@ -41,6 +41,8 @@ impl TerminalManager {
         app: AppHandle,
         cwd: Option<String>,
         shell: Option<String>,
+        args: Option<Vec<String>>,
+        env: Option<std::collections::HashMap<String, String>>,
     ) -> Result<String, String> {
         let pty_system = NativePtySystem::default();
 
@@ -53,6 +55,14 @@ impl TerminalManager {
         });
 
         let mut builder = CommandBuilder::new(cmd);
+        if let Some(args) = args {
+            builder.args(args);
+        }
+        if let Some(env) = env {
+            for (k, v) in env {
+                builder.env(k, v);
+            }
+        }
         // Open the terminal in the workspace folder when provided, falling back
         // to the process working directory.
         let dir = cwd

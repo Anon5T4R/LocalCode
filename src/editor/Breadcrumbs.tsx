@@ -1,11 +1,11 @@
 import { useEffect, useState, memo } from "react";
 import { getDocumentSymbols, getLspLanguage } from "../lib/lsp";
 import type { LspSymbol } from "../lib/lsp";
+import { useCursor } from "../lib/cursor";
 
 interface BreadcrumbsProps {
   filePath: string | null;
   rootPath: string | null;
-  cursorLine: number; // 1-based (Monaco line number)
   onSelect: (line: number) => void; // 0-based symbol line
 }
 
@@ -20,8 +20,10 @@ function enclosingChain(symbols: LspSymbol[], line0: number): LspSymbol[] {
   return [];
 }
 
-export const Breadcrumbs = memo(function Breadcrumbs({ filePath, rootPath, cursorLine, onSelect }: BreadcrumbsProps) {
+export const Breadcrumbs = memo(function Breadcrumbs({ filePath, rootPath, onSelect }: BreadcrumbsProps) {
   const [symbols, setSymbols] = useState<LspSymbol[]>([]);
+  // Subscribed here (not passed from App) so caret moves don't re-render App.
+  const { line: cursorLine } = useCursor();
 
   useEffect(() => {
     if (!filePath) { setSymbols([]); return; }
