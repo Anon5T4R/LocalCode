@@ -327,6 +327,19 @@ const pt = {
   "toast.clickToClose": "Clique para fechar",
   "ai.selectModelsDir": "Selecionar pasta de modelos GGUF",
   "debug.bpHover": "Ponto de parada — clique para remover",
+
+  // Debug: controller / launch
+  "debug.startingProgram": "Iniciando depuração de {name}…",
+  "debug.sessionEnded": "Depuração encerrada.",
+  "debug.evalOnlyPaused": "Só é possível avaliar expressões com o programa pausado.",
+  "debug.tsUnsupported": "Depuração direta de TypeScript/JSX ainda não é suportada. Compile para .js e depure o arquivo gerado.",
+  "debug.cargoNameFailed": "Não foi possível ler o nome do pacote no Cargo.toml.",
+  "debug.compilingWith": "Compilando com {tool}…",
+  "debug.buildFailed": "A compilação falhou. Corrija os erros acima e tente de novo.",
+  "debug.rustcFallback": "Cargo.toml não encontrado — compilando o arquivo único com rustc…",
+  "debug.compileFailedRust": "Não foi possível compilar com rustc. Instale o Rust (rustup.rs) ou corrija os erros acima.",
+  "debug.compileFailedCpp": "Não foi possível compilar. Instale um compilador C/C++ (gcc ou clang) ou corrija os erros acima.",
+  "debug.unknownExt": "Não sei depurar arquivos .{ext}. Linguagens suportadas: Python, JavaScript (Node), Rust e C/C++.",
 } as const;
 
 export type MessageKey = keyof typeof pt;
@@ -621,6 +634,18 @@ const en: Record<MessageKey, string> = {
   "toast.clickToClose": "Click to close",
   "ai.selectModelsDir": "Select GGUF models folder",
   "debug.bpHover": "Breakpoint — click to remove",
+
+  "debug.startingProgram": "Starting debug of {name}…",
+  "debug.sessionEnded": "Debug session ended.",
+  "debug.evalOnlyPaused": "Expressions can only be evaluated while the program is paused.",
+  "debug.tsUnsupported": "Direct TypeScript/JSX debugging is not supported yet. Compile to .js and debug the generated file.",
+  "debug.cargoNameFailed": "Could not read the package name from Cargo.toml.",
+  "debug.compilingWith": "Compiling with {tool}…",
+  "debug.buildFailed": "The build failed. Fix the errors above and try again.",
+  "debug.rustcFallback": "No Cargo.toml found — compiling the single file with rustc…",
+  "debug.compileFailedRust": "Could not compile with rustc. Install Rust (rustup.rs) or fix the errors above.",
+  "debug.compileFailedCpp": "Could not compile. Install a C/C++ compiler (gcc or clang) or fix the errors above.",
+  "debug.unknownExt": "Don't know how to debug .{ext} files. Supported languages: Python, JavaScript (Node), Rust and C/C++.",
 };
 
 const es: Record<MessageKey, string> = {
@@ -913,6 +938,18 @@ const es: Record<MessageKey, string> = {
   "toast.clickToClose": "Haz clic para cerrar",
   "ai.selectModelsDir": "Seleccionar carpeta de modelos GGUF",
   "debug.bpHover": "Punto de interrupción — haz clic para quitar",
+
+  "debug.startingProgram": "Iniciando depuración de {name}…",
+  "debug.sessionEnded": "Depuración finalizada.",
+  "debug.evalOnlyPaused": "Solo se pueden evaluar expresiones con el programa pausado.",
+  "debug.tsUnsupported": "La depuración directa de TypeScript/JSX aún no está soportada. Compila a .js y depura el archivo generado.",
+  "debug.cargoNameFailed": "No se pudo leer el nombre del paquete en Cargo.toml.",
+  "debug.compilingWith": "Compilando con {tool}…",
+  "debug.buildFailed": "La compilación falló. Corrige los errores de arriba e inténtalo de nuevo.",
+  "debug.rustcFallback": "No se encontró Cargo.toml — compilando el archivo único con rustc…",
+  "debug.compileFailedRust": "No se pudo compilar con rustc. Instala Rust (rustup.rs) o corrige los errores de arriba.",
+  "debug.compileFailedCpp": "No se pudo compilar. Instala un compilador C/C++ (gcc o clang) o corrige los errores de arriba.",
+  "debug.unknownExt": "No sé depurar archivos .{ext}. Lenguajes soportados: Python, JavaScript (Node), Rust y C/C++.",
 };
 
 const DICTS: Record<Locale, Record<MessageKey, string>> = { pt, en, es };

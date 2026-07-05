@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { dapConnect, dapStart } from "../lib/debug";
 import { readFile } from "../lib/fs";
 import { basename, dirname } from "../lib/path";
+import { t } from "../lib/i18n";
 import { DapConnection, initializeArgs } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -176,7 +177,7 @@ class DebugController {
 
     let plan: LaunchPlan;
     try {
-      if (!filePath) throw new Error("Salve o arquivo antes de depurar (Ctrl+S).");
+      if (!filePath) throw new Error(t("debug.saveFirst"));
       plan = await inferLaunch(filePath, workspaceRoot, (line) => this.log("info", line));
     } catch (e) {
       this.fail(String((e as Error).message ?? e));
@@ -184,7 +185,7 @@ class DebugController {
     }
 
     this.set({ programName: plan.programName });
-    this.log("info", `Iniciando depuração de ${plan.programName}…`);
+    this.log("info", t("debug.startingProgram", { name: plan.programName }));
 
     try {
       const info = await dapStart(plan.language);
@@ -229,7 +230,7 @@ class DebugController {
         /* adapter may already be gone */
       }
     }
-    await this.endSession("Depuração encerrada.");
+    await this.endSession(t("debug.sessionEnded"));
   }
 
   private fail(message: string) {
@@ -343,7 +344,7 @@ class DebugController {
         ? this.sessions.get(at.key)
         : null;
     if (!session) {
-      this.log("error", "Só é possível avaliar expressões com o programa pausado.");
+      this.log("error", t("debug.evalOnlyPaused"));
       return;
     }
     try {
@@ -585,25 +586,46 @@ export async function inferLaunch(
   }
 
   if (ext === "ts" || ext === "tsx" || ext === "jsx") {
-    throw new Error(
-      "Depuração direta de TypeScript/JSX ainda não é suportada. Compile para .js e depure o arquivo gerado."
-    );
+    throw new Error(t("debug.tsUnsupported"));
   }
 
   if (ext === "rs") {
     const cargoDir = await findUp(cwd, "Cargo.toml", workspaceRoot);
     if (!cargoDir) {
-      throw new Error("Nenhum Cargo.toml encontrado. Depuração de Rust requer um projeto Cargo.");
+      // Standalone .rs (no Cargo project): compile the single file with rustc,
+      // same zero-config path as C/C++. rustc emits debug info with -g.
+      const stem = name.replace(/\.[^.]+$/, "");
+      const out = joinNative(cwd, `${stem}-debug${isWindows ? ".exe" : ""}`);
+      log(t("debug.rustcFallback"));
+      log(t("debug.compilingWith", { tool: "rustc" }));
+      try {
+        await runBuildCommand(cwd, `rustc -g -C opt-level=0 "${filePath}" -o "${out}"`);
+      } catch (e) {
+        log(String(e));
+        throw new Error(t("debug.compileFailedRust"));
+      }
+      return {
+        language: "rust",
+        programName: name,
+        config: {
+          name: `Depurar ${name}`,
+          type: "lldb",
+          request: "launch",
+          program: out,
+          cwd,
+          terminal: "console",
+        },
+      };
     }
     const manifest = await readFile(joinNative(cargoDir, "Cargo.toml"));
     const pkgName = /\[package\][\s\S]*?name\s*=\s*"([^"]+)"/.exec(manifest)?.[1];
-    if (!pkgName) throw new Error("Não foi possível ler o nome do pacote no Cargo.toml.");
-    log("Compilando com cargo build…");
+    if (!pkgName) throw new Error(t("debug.cargoNameFailed"));
+    log(t("debug.compilingWith", { tool: "cargo build" }));
     try {
       await runBuildCommand(cargoDir, "cargo build");
     } catch (e) {
       log(String(e));
-      throw new Error("A compilação falhou. Corrija os erros acima e tente de novo.");
+      throw new Error(t("debug.buildFailed"));
     }
     const program = joinNative(cargoDir, "target", "debug", pkgName + (isWindows ? ".exe" : ""));
     return {
@@ -628,7 +650,7 @@ export async function inferLaunch(
     let compiled = false;
     let lastError = "";
     for (const cc of compilers) {
-      log(`Compilando com ${cc}…`);
+      log(t("debug.compilingWith", { tool: cc }));
       try {
         await runBuildCommand(cwd, `${cc} -g -O0 "${filePath}" -o "${out}"`);
         compiled = true;
@@ -639,9 +661,7 @@ export async function inferLaunch(
     }
     if (!compiled) {
       log(lastError);
-      throw new Error(
-        "Não foi possível compilar. Instale um compilador C/C++ (gcc ou clang) ou corrija os erros acima."
-      );
+      throw new Error(t("debug.compileFailedCpp"));
     }
     return {
       language: isCpp ? "cpp" : "c",
@@ -657,9 +677,7 @@ export async function inferLaunch(
     };
   }
 
-  throw new Error(
-    `Não sei depurar arquivos .${ext}. Linguagens suportadas: Python, JavaScript (Node), Rust e C/C++.`
-  );
+  throw new Error(t("debug.unknownExt", { ext }));
 }
 
 /** Join with the platform separator (paths given to adapters must be native). */
