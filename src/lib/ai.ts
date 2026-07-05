@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n";
 
 export interface ModelInfo {
   name: string;
@@ -14,7 +15,8 @@ export interface LlmStatus {
 }
 
 export interface ChatMsg {
-  role: "system" | "user" | "assistant";
+  /** "error" is UI-only feedback — filtered out before sending to the model. */
+  role: "system" | "user" | "assistant" | "error";
   content: string;
   reasoning?: string;
   tool_calls?: ToolCall[];
@@ -49,7 +51,7 @@ export async function waitHealthy(port: number, timeoutMs = 180000): Promise<voi
       const r = await fetch(`http://127.0.0.1:${port}/health`);
       if (r.ok) return;
     } catch { /* still warming up */ }
-    if (Date.now() - start > timeoutMs) throw new Error("o modelo demorou demais para carregar");
+    if (Date.now() - start > timeoutMs) throw new Error(t("ai.modelTimeout"));
     await new Promise((res) => setTimeout(res, 500));
   }
 }
@@ -70,7 +72,7 @@ export async function streamChat(
     }),
     signal: opts.signal,
   });
-  if (!res.ok || !res.body) throw new Error(`a IA respondeu ${res.status}`);
+  if (!res.ok || !res.body) throw new Error(t("ai.badResponse", { status: res.status }));
 
   let inThink = false;
   const routeContent = (text: string) => {

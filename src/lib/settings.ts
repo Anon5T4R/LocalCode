@@ -1,11 +1,12 @@
 import { DEFAULT_MODELS_DIR } from "./ai";
+import { detectLocale, type Locale } from "./i18n";
 
 export interface Settings {
   modelsDir: string;
   lastModelPath: string;
   ngl: number;
   ctx: number;
-  locale: "pt" | "en";
+  locale: Locale;
   githubClientId: string;
   theme: "dark" | "light" | "high-contrast";
 }
@@ -15,7 +16,7 @@ const DEFAULTS: Settings = {
   lastModelPath: "",
   ngl: 0,
   ctx: 4096,
-  locale: "pt",
+  locale: detectLocale(),
   githubClientId: "",
   theme: "dark",
 };

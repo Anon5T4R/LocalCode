@@ -6,6 +6,7 @@ import {
   spawnTerminal, writeTerminal, resizeTerminal, killTerminal,
   onTerminalOutput, onTerminalExit,
 } from "../lib/terminal";
+import { t } from "../lib/i18n";
 
 /** A pre-spawned PTY session the panel should attach to (debugger runInTerminal). */
 export interface TerminalAdoption {
@@ -72,14 +73,14 @@ export function TerminalPanel({ workspaceRoot, onClose, adoptions }: TerminalPan
                 color: k.key === activeKey ? "var(--text-primary, #ddd)" : "var(--text-secondary, #999)",
               }}
             >
-              {k.title ?? `Terminal ${i + 1}`}
+              {k.title ?? t("terminal.n", { n: i + 1 })}
               <button
                 className="terminal-tab-close"
                 onClick={(e) => { e.stopPropagation(); closeTerm(k.key); }}
                 style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 11 }}
-                title="Fechar terminal"
+                title={t("terminal.close")}
               >
-                ✕
+                <span className="codicon codicon-close" style={{ fontSize: 11 }} />
               </button>
             </div>
           ))}
@@ -87,12 +88,14 @@ export function TerminalPanel({ workspaceRoot, onClose, adoptions }: TerminalPan
             className="terminal-add"
             onClick={addTerm}
             style={{ background: "none", border: "none", color: "var(--text-secondary, #999)", cursor: "pointer", fontSize: 16, padding: "0 6px" }}
-            title="Novo terminal"
+            title={t("terminal.new")}
           >
-            +
+            <span className="codicon codicon-add" />
           </button>
         </div>
-        <button className="terminal-close-btn" onClick={onClose} title="Fechar painel">✕</button>
+        <button className="terminal-close-btn" onClick={onClose} title={t("terminal.closePanel")}>
+          <span className="codicon codicon-close" />
+        </button>
       </div>
       <div className="terminal-body" style={{ position: "relative", flex: 1, minHeight: 0 }}>
         {keys.map((k) => (

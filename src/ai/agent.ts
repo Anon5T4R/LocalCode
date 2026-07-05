@@ -1,5 +1,6 @@
 import { readFile, writeFile, listDir } from "../lib/fs";
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../lib/i18n";
 
 export interface AgentTool {
   name: string;
@@ -88,7 +89,9 @@ export const AGENT_TOOLS: AgentTool[] = [
   },
 ];
 
-export const AGENT_SYSTEM_PROMPT = `Você é um assistente de programação integrado ao LocalCode, especializado em Rust.
+// The prompt body stays in PT (the model follows it fine); the response
+// language follows the UI locale via the t("agent.respondIn") line at the end.
+export const getAgentSystemPrompt = () => `Você é um assistente de programação integrado ao LocalCode, especializado em Rust.
 
 Você tem acesso a ferramentas que podem ler, criar, editar e excluir arquivos, além de executar comandos no terminal.
 
@@ -116,7 +119,9 @@ Para usar uma ferramenta, responda com um objeto JSON na seguinte estrutura:
 {"tool": "nome_da_ferramenta", "args": { ... }}
 
 Você pode chamar várias ferramentas em sequência, uma por resposta.
-Se o usuário pedir algo que não requer ferramentas, responda normalmente.`;
+Se o usuário pedir algo que não requer ferramentas, responda normalmente.
+
+${t("agent.respondIn")}`;
 
 export function normalizeArgs(args: Record<string, any>, tool: string): Record<string, any> {
   // Models often use file_path / file_content instead of path / content
@@ -171,28 +176,28 @@ export async function executeTool(
       case "create_file": {
         const path = resolvePath(args.path, workspaceRoot);
         await writeFile(path, args.content);
-        return { tool, success: true, output: `Arquivo criado: ${path}`, affectedPath: path };
+        return { tool, success: true, output: t("agent.fileCreated", { path }), affectedPath: path };
       }
       case "edit_file": {
         const path = resolvePath(args.path, workspaceRoot);
         const content = await readFile(path);
         if (!content.includes(args.old_string)) {
-          return { tool, success: false, output: `Texto não encontrado em ${path}` };
+          return { tool, success: false, output: t("agent.textNotFound", { path }) };
         }
         const newContent = content.replace(args.old_string, args.new_string);
         await writeFile(path, newContent);
-        return { tool, success: true, output: `Arquivo editado: ${path}`, affectedPath: path };
+        return { tool, success: true, output: t("agent.fileEdited", { path }), affectedPath: path };
       }
       case "delete_file": {
         const path = resolvePath(args.path, workspaceRoot);
         await invoke("delete_file", { path });
-        return { tool, success: true, output: `Excluído: ${path}` };
+        return { tool, success: true, output: t("agent.deleted", { path }) };
       }
       case "rename_file": {
         const oldPath = resolvePath(args.old_path, workspaceRoot);
         const newPath = resolvePath(args.new_path, workspaceRoot);
         await invoke("rename_file", { oldPath, newPath });
-        return { tool, success: true, output: `Movido: ${oldPath} → ${newPath}` };
+        return { tool, success: true, output: t("agent.moved", { old: oldPath, new: newPath }) };
       }
       case "list_dir": {
         const path = resolvePath(args.path, workspaceRoot);
@@ -209,21 +214,21 @@ export async function executeTool(
         const grouped: Record<string, string[]> = {};
         for (const r of results) {
           if (!grouped[r.path]) grouped[r.path] = [];
-          grouped[r.path].push(`  linha ${r.line}: ${r.line_content}`);
+          grouped[r.path].push(`  ${t("agent.line")} ${r.line}: ${r.line_content}`);
         }
         const lines = Object.entries(grouped).map(([path, matches]) =>
           `${path}\n${matches.join("\n")}`
         );
-        return { tool, success: true, output: lines.join("\n\n") || "Nenhum resultado" };
+        return { tool, success: true, output: lines.join("\n\n") || t("common.noResults") };
       }
       case "execute_command": {
         // This is handled specially with confirmation
-        return { tool, success: false, output: "Comandos de terminal requerem confirmação manual" };
+        return { tool, success: false, output: t("agent.commandNeedsConfirm") };
       }
       default:
-        return { tool, success: false, output: `Ferramenta desconhecida: ${tool}` };
+        return { tool, success: false, output: t("agent.unknownTool", { tool }) };
     }
   } catch (e: any) {
-    return { tool, success: false, output: `Erro: ${e.message || e}` };
+    return { tool, success: false, output: t("agent.error", { error: e.message || String(e) }) };
   }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../lib/i18n";
 
 export interface PaletteCommand {
   id: string;
@@ -133,40 +134,20 @@ export function CommandPalette({ mode, rootPath, commands, onOpenFile, onClose }
   };
 
   return (
-    <div
-      className="palette-overlay"
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 1000,
-        background: "rgba(0,0,0,0.35)", display: "flex", justifyContent: "center", alignItems: "flex-start",
-        paddingTop: "12vh",
-      }}
-    >
-      <div
-        className="palette"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(640px, 90vw)", maxHeight: "70vh", display: "flex", flexDirection: "column",
-          background: "var(--bg-secondary, #252526)", border: "1px solid var(--border, #454545)",
-          borderRadius: 8, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden",
-        }}
-      >
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
         <input
           ref={inputRef}
+          className="palette-input"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={mode === "files" ? "Buscar arquivo por nome..." : "Buscar comando..."}
-          style={{
-            border: "none", outline: "none", padding: "12px 14px", fontSize: 14,
-            background: "var(--bg-primary, #1e1e1e)", color: "var(--text-primary, #ddd)",
-            borderBottom: "1px solid var(--border, #454545)",
-          }}
+          placeholder={mode === "files" ? t("palette.searchFiles") : t("palette.searchCommands")}
         />
-        <div ref={listRef} className="palette-list" style={{ overflowY: "auto" }}>
+        <div ref={listRef} className="palette-list">
           {filtered.length === 0 && (
-            <div style={{ padding: 14, color: "var(--text-muted, #888)", fontSize: 13 }}>
-              {mode === "files" && !rootPath ? "Abra uma pasta primeiro." : "Nenhum resultado"}
+            <div className="palette-empty">
+              {mode === "files" && !rootPath ? t("palette.openFolderFirst") : t("common.noResults")}
             </div>
           )}
           {filtered.map((item, idx) => (
@@ -176,17 +157,9 @@ export function CommandPalette({ mode, rootPath, commands, onOpenFile, onClose }
               className={`palette-item ${idx === selected ? "selected" : ""}`}
               onMouseEnter={() => setSelected(idx)}
               onClick={() => choose(item)}
-              style={{
-                display: "flex", alignItems: "baseline", gap: 8, padding: "7px 14px", cursor: "pointer",
-                background: idx === selected ? "var(--bg-active, #094771)" : "transparent",
-              }}
             >
-              <span style={{ fontSize: 13, color: "var(--text-primary, #ddd)" }}>{item.label}</span>
-              {item.hint && (
-                <span style={{ fontSize: 11, color: "var(--text-muted, #888)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.hint}
-                </span>
-              )}
+              <span className="palette-item-label">{item.label}</span>
+              {item.hint && <span className="palette-item-hint">{item.hint}</span>}
             </div>
           ))}
         </div>

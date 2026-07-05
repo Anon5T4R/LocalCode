@@ -29,17 +29,20 @@ import { basename } from "./lib/path";
 import { ExtensionManager } from "./lib/extension";
 import type { ExtensionPanel, ExtensionCommand } from "./lib/extension";
 import { loadSettings } from "./lib/settings";
+import { toast, ToastHost } from "./lib/toast";
+import { t, useLocale, setLocale } from "./lib/i18n";
 import "./App.css";
 
-// Apply saved theme immediately on load
-const _savedTheme = loadSettings().theme;
-if (_savedTheme) document.documentElement.setAttribute("data-theme", _savedTheme);
+// Apply saved theme + locale immediately on load
+const _savedSettings = loadSettings();
+if (_savedSettings.theme) document.documentElement.setAttribute("data-theme", _savedSettings.theme);
+setLocale(_savedSettings.locale);
 
 const TAB_ID = () => crypto.randomUUID();
 const NO_LINES: number[] = [];
 
 function newTab(filePath?: string, content?: string): Tab {
-  const name = filePath ? basename(filePath) : "sem-titulo";
+  const name = filePath ? basename(filePath) : t("app.untitled");
   const ext = filePath ? (name.split(".").pop() || "") : "";
   return {
     id: TAB_ID(),
@@ -74,18 +77,21 @@ function dispatchExtCommand(
   // Other command types can be dispatched here
 }
 
+/** Built-in right-side panels. Exactly one is visible at a time (VS Code-style),
+ *  so mouse toggles and keyboard shortcuts behave identically. */
+type SidePanelId = "debug" | "git" | "github" | "ai" | "lsp" | "settings";
+
 function App() {
+  // Locale: subscribing here + key={locale} on the root div remounts the whole
+  // tree on change, so memo'd children pick up new strings without each one
+  // subscribing individually. Locale changes are rare; the remount is cheap.
+  const locale = useLocale();
   const [tabs, setTabs] = useState<Tab[]>([newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showGit, setShowGit] = useState(false);
-  const [showGitHub, setShowGitHub] = useState(false);
-  const [showAi, setShowAi] = useState(false);
-  const [showLspSetup, setShowLspSetup] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
+  const [sidePanel, setSidePanel] = useState<SidePanelId | null>(null);
   const [termAdoptions, setTermAdoptions] = useState<TerminalAdoption[]>([]);
   const [gitBranch, setGitBranch] = useState<string>("");
   const [gotoLine, setGotoLine] = useState<number | null>(null);
@@ -126,6 +132,10 @@ function App() {
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const repoPath = rootPath;
+
+  const togglePanel = useCallback((id: SidePanelId) => {
+    setSidePanel((cur) => (cur === id ? null : id));
+  }, []);
 
   // ---- Git branch (refreshed reactively via the file watcher, not polled) ----
   const refreshBranch = useCallback(async () => {
@@ -208,6 +218,7 @@ function App() {
       setGotoLine(line ?? saved?.line ?? null);
     } catch (e) {
       console.error("Failed to open file:", e);
+      toast.error(t("app.openFailed", { name: basename(path), error: String(e) }));
     }
   }, []);
 
@@ -217,7 +228,7 @@ function App() {
     let filePath = tab.path;
     if (!filePath) {
       const selected = await save({
-        title: "Salvar arquivo",
+        title: t("app.saveFileTitle"),
         defaultPath: tab.title,
       });
       if (!selected) return;
@@ -245,6 +256,7 @@ function App() {
       );
     } catch (e) {
       console.error("Failed to save:", e);
+      toast.error(t("app.saveFailed", { name: basename(filePath), error: String(e) }));
     }
   }, []);
 
@@ -261,16 +273,19 @@ function App() {
   }, []);
 
   const closeTab = useCallback(async (id: string) => {
-    const t = tabsRef.current.find((x) => x.id === id);
-    if (!t) return;
-    if (t.dirty) {
-      const ok = await ask(`"${t.title}" tem alterações não salvas. Fechar mesmo assim?`, { title: "Fechar arquivo", kind: "warning" });
+    const tab = tabsRef.current.find((x) => x.id === id);
+    if (!tab) return;
+    if (tab.dirty) {
+      const ok = await ask(
+        t("app.closeDirtyConfirm", { name: tab.title }),
+        { title: t("app.closeFileTitle"), kind: "warning" }
+      );
       if (!ok) return;
     }
 
     // Free the Monaco model that backed this tab (kept alive by keepCurrentModel).
-    setModelToDispose(t.path ?? `untitled:${t.id}`);
-    contentsRef.current.delete(t.id);
+    setModelToDispose(tab.path ?? `untitled:${tab.id}`);
+    contentsRef.current.delete(tab.id);
 
     const idx = tabsRef.current.findIndex((x) => x.id === id);
     const remaining = tabsRef.current.filter((x) => x.id !== id);
@@ -292,8 +307,8 @@ function App() {
   const reloadTabFromDisk = useCallback(async (id: string) => {
     const tab = tabsRef.current.find((t) => t.id === id);
     if (!tab?.path) return;
-    const ok = await ask(`Recarregar "${tab.title}" do disco? As alterações não salvas serão perdidas.`, {
-      title: "Recarregar arquivo", kind: "warning",
+    const ok = await ask(t("app.reloadConfirm", { name: tab.title }), {
+      title: t("app.reloadTitle"), kind: "warning",
     });
     if (!ok) return;
     try {
@@ -352,20 +367,20 @@ function App() {
     debugController.setRunInTerminalHandler(async ({ argv, cwd, env, title }) => {
       const sessionId = await spawnTerminal(cwd ?? rootPathRef.current, argv[0], argv.slice(1), env);
       setShowTerminal(true);
-      setTermAdoptions((xs) => [...xs, { key: crypto.randomUUID(), sessionId, title: title ?? "Depuração" }]);
+      setTermAdoptions((xs) => [...xs, { key: crypto.randomUUID(), sessionId, title: title ?? t("app.debugTerminalTitle") }]);
     });
   }, []);
 
   const startDebug = useCallback(() => {
     const tab = tabsRef.current.find((t) => t.id === activeIdRef.current);
-    setShowDebug(true);
+    setSidePanel("debug");
     debugController.start(tab?.path ?? null, rootPathRef.current);
   }, []);
 
   // ---- Open folder dialog ----
   const openFolder = useCallback(async () => {
     try {
-      const selected = await open({ directory: true, multiple: false, title: "Abrir pasta" });
+      const selected = await open({ directory: true, multiple: false, title: t("app.openFolderTitle") });
       if (selected) {
         setRootPath(selected);
       }
@@ -441,8 +456,8 @@ function App() {
       const dirtyCount = tabsRef.current.filter((t) => t.dirty).length;
       if (dirtyCount > 0) {
         const ok = await ask(
-          `Você tem ${dirtyCount} arquivo(s) com alterações não salvas.\nSair mesmo assim?`,
-          { title: "Sair do LocalCode", kind: "warning" }
+          t("app.exitConfirm", { count: dirtyCount }),
+          { title: t("app.exitTitle"), kind: "warning" }
         );
         if (!ok) return;
       }
@@ -475,6 +490,9 @@ function App() {
   }, [rootPath, activeId]);
 
   // ---- Keyboard shortcuts ----
+  // VS Code-style chord: Ctrl+K arms it; Ctrl+O within 2s opens a folder.
+  // Ctrl+K is NOT preventDefault'ed so Monaco's own Ctrl+K chords keep working.
+  const chordArmedAt = useRef(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Debug function keys (VS Code-compatible)
@@ -504,49 +522,42 @@ function App() {
       }
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
+      // Second half of the Ctrl+K Ctrl+O chord
+      if (k === "o" && Date.now() - chordArmedAt.current < 2000) {
+        e.preventDefault();
+        chordArmedAt.current = 0;
+        openFolder();
+        return;
+      }
+      if (k === "k" && !e.shiftKey) {
+        chordArmedAt.current = Date.now();
+        return;
+      }
+      chordArmedAt.current = 0;
       if (k === "s") {
         e.preventDefault();
         saveFile();
       } else if (k === "`") {
         e.preventDefault();
         setShowTerminal((v) => !v);
-      } else if (k === "k" && e.shiftKey) {
-        e.preventDefault();
-        openFolder();
       } else if (k === "w") {
         e.preventDefault();
         closeTab(activeIdRef.current);
       } else if (e.shiftKey && k === "i") {
         e.preventDefault();
-        setShowAi((v) => !v);
-        setShowLspSetup(false);
-        setShowGit(false);
-        setShowGitHub(false);
+        togglePanel("ai");
       } else if (e.shiftKey && k === "l") {
         e.preventDefault();
-        setShowLspSetup((v) => !v);
-        setShowAi(false);
-        setShowGit(false);
-        setShowGitHub(false);
+        togglePanel("lsp");
       } else if (e.shiftKey && k === "g") {
         e.preventDefault();
-        setShowGit((v) => !v);
-        setShowAi(false);
-        setShowLspSetup(false);
-        setShowGitHub(false);
+        togglePanel("git");
       } else if (e.shiftKey && k === "h") {
         e.preventDefault();
-        setShowGitHub((v) => !v);
-        setShowAi(false);
-        setShowLspSetup(false);
-        setShowGit(false);
+        togglePanel("github");
       } else if (e.shiftKey && k === "d") {
         e.preventDefault();
-        setShowDebug((v) => !v);
-        setShowAi(false);
-        setShowLspSetup(false);
-        setShowGit(false);
-        setShowGitHub(false);
+        togglePanel("debug");
       } else if (e.shiftKey && k === "f") {
         e.preventDefault();
         setShowSearch((v) => !v);
@@ -577,34 +588,53 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint]);
+  }, [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint, togglePanel]);
+
+  // ---- Close the tab context menu on outside click / Escape ----
+  useEffect(() => {
+    if (!tabCtx) return;
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest(".tab-context-menu")) setTabCtx(null);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTabCtx(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [tabCtx]);
 
   // ---- Command palette registry ----
   const paletteCommands: PaletteCommand[] = useMemo(() => [
-    { id: "file.save", label: "Salvar arquivo", hint: "Ctrl+S", run: () => saveFile() },
-    { id: "file.openFolder", label: "Abrir pasta", hint: "Ctrl+K Ctrl+O", run: () => openFolder() },
-    { id: "file.newTab", label: "Nova aba", run: () => { const t = newTab(); setTabs((ts) => [...ts, t]); setActiveId(t.id); } },
-    { id: "file.closeTab", label: "Fechar aba", hint: "Ctrl+W", run: () => closeTab(activeIdRef.current) },
-    { id: "debug.start", label: "Depurar arquivo atual", hint: "F5", run: () => startDebug() },
-    { id: "debug.toggleBreakpoint", label: "Alternar ponto de parada", hint: "F9", run: () => handleToggleBreakpoint(cursorStore.get().line) },
-    { id: "view.debug", label: "Alternar painel de depuração", hint: "Ctrl+Shift+D", run: () => setShowDebug((v) => !v) },
-    { id: "view.terminal", label: "Alternar terminal", hint: "Ctrl+`", run: () => setShowTerminal((v) => !v) },
-    { id: "view.search", label: "Alternar busca", hint: "Ctrl+Shift+F", run: () => setShowSearch((v) => !v) },
-    { id: "view.git", label: "Alternar Git", hint: "Ctrl+Shift+G", run: () => setShowGit((v) => !v) },
-    { id: "view.github", label: "Alternar GitHub", hint: "Ctrl+Shift+H", run: () => setShowGitHub((v) => !v) },
-    { id: "view.ai", label: "Alternar IA", hint: "Ctrl+Shift+I", run: () => setShowAi((v) => !v) },
-    { id: "view.lsp", label: "Alternar LSP", hint: "Ctrl+Shift+L", run: () => setShowLspSetup((v) => !v) },
-    { id: "view.settings", label: "Configurações", run: () => setShowSettings((v) => !v) },
+    { id: "file.save", label: t("cmd.saveFile"), hint: "Ctrl+S", run: () => saveFile() },
+    { id: "file.openFolder", label: t("cmd.openFolder"), hint: "Ctrl+K Ctrl+O", run: () => openFolder() },
+    { id: "file.newTab", label: t("cmd.newTab"), run: () => { const tb = newTab(); setTabs((ts) => [...ts, tb]); setActiveId(tb.id); } },
+    { id: "file.closeTab", label: t("cmd.closeTab"), hint: "Ctrl+W", run: () => closeTab(activeIdRef.current) },
+    { id: "debug.start", label: t("cmd.debugStart"), hint: "F5", run: () => startDebug() },
+    { id: "debug.toggleBreakpoint", label: t("cmd.toggleBreakpoint"), hint: "F9", run: () => handleToggleBreakpoint(cursorStore.get().line) },
+    { id: "view.debug", label: t("cmd.toggleDebugPanel"), hint: "Ctrl+Shift+D", run: () => togglePanel("debug") },
+    { id: "view.terminal", label: t("cmd.toggleTerminal"), hint: "Ctrl+`", run: () => setShowTerminal((v) => !v) },
+    { id: "view.search", label: t("cmd.toggleSearch"), hint: "Ctrl+Shift+F", run: () => setShowSearch((v) => !v) },
+    { id: "view.git", label: t("cmd.toggleGit"), hint: "Ctrl+Shift+G", run: () => togglePanel("git") },
+    { id: "view.github", label: t("cmd.toggleGitHub"), hint: "Ctrl+Shift+H", run: () => togglePanel("github") },
+    { id: "view.ai", label: t("cmd.toggleAi"), hint: "Ctrl+Shift+I", run: () => togglePanel("ai") },
+    { id: "view.lsp", label: t("cmd.toggleLsp"), hint: "Ctrl+Shift+L", run: () => togglePanel("lsp") },
+    { id: "view.settings", label: t("common.settings"), run: () => togglePanel("settings") },
     ...extCommands.map((c) => ({
       id: c.id,
       label: c.title || c.id,
       hint: c.keybindings?.[0],
       run: () => dispatchExtCommand(c, setExtPanelVis),
     })),
-  ], [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [saveFile, openFolder, closeTab, extCommands, startDebug, handleToggleBreakpoint, togglePanel, locale]);
 
   return (
-    <div className="app">
+    <div className="app" key={locale}>
       {/* Title bar / menu */}
       <div className="title-bar">
         <div className="title-bar-menu">
@@ -627,30 +657,28 @@ function App() {
               <span className="title-tab-title">
                 {tab.externallyChanged && (
                   <span
-                    className="title-tab-warning"
-                    title="O arquivo mudou no disco e há alterações não salvas. Clique para recarregar (descarta as edições locais)."
+                    className="title-tab-warning codicon codicon-warning"
+                    title={t("app.tabExternallyChanged")}
                     onClick={(e) => { e.stopPropagation(); reloadTabFromDisk(tab.id); }}
-                    style={{ cursor: "pointer", color: "var(--warning, #e5c07b)" }}
-                  >
-                    ⚠{" "}
-                  </span>
+                  />
                 )}
                 {tab.dirty && <span className="title-tab-dirty">● </span>}
                 {tab.title}
               </span>
               <button
                 className="title-tab-close"
+                title={t("app.closeTab")}
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               >
-                ✕
+                <span className="codicon codicon-close" />
               </button>
             </div>
           ))}
-          <button className="title-tab-new" onClick={() => {
+          <button className="title-tab-new" title={t("app.newTab")} onClick={() => {
             const t = newTab();
             setTabs((ts) => [...ts, t]);
             setActiveId(t.id);
-          }}>+</button>
+          }}><span className="codicon codicon-add" /></button>
           {tabCtx && tabs.length > 1 && (
             <div
               className="tab-context-menu"
@@ -659,41 +687,41 @@ function App() {
               onContextMenu={(e) => e.preventDefault()}
             >
               <button onClick={() => { closeOtherTabs(tabCtx.id); setTabCtx(null); }}>
-                Fechar outros
+                {t("app.closeOthers")}
               </button>
               <button onClick={() => { closeAllTabs(); setTabCtx(null); }}>
-                Fechar todos
+                {t("app.closeAll")}
               </button>
             </div>
           )}
         </div>
         <div className="title-bar-actions">
-          <button className="action-btn" onClick={saveFile} disabled={!activeTab?.dirty} title="Salvar (Ctrl+S)">
-            💾
+          <button className="action-btn" onClick={saveFile} disabled={!activeTab?.dirty} title={t("app.saveTitle")}>
+            <span className="codicon codicon-save" />
           </button>
-          <button className="action-btn" onClick={() => setShowDebug((v) => !v)} title="Depuração (Ctrl+Shift+D / F5)">
-            🐞
+          <button className={`action-btn ${sidePanel === "debug" ? "active" : ""}`} onClick={() => togglePanel("debug")} title={t("app.debugTitle")}>
+            <span className="codicon codicon-debug-alt" />
           </button>
-          <button className="action-btn" onClick={() => setShowAi((v) => !v)} title="AI (Ctrl+Shift+I)">
-            AI
+          <button className={`action-btn ${sidePanel === "ai" ? "active" : ""}`} onClick={() => togglePanel("ai")} title={t("app.aiTitle")}>
+            <span className="codicon codicon-sparkle" />
           </button>
-          <button className="action-btn" onClick={() => setShowLspSetup((v) => !v)} title="LSP (Ctrl+Shift+L)">
-            LSP
+          <button className={`action-btn ${sidePanel === "lsp" ? "active" : ""}`} onClick={() => togglePanel("lsp")} title={t("app.lspTitle")}>
+            <span className="codicon codicon-plug" />
           </button>
-          <button className="action-btn" onClick={() => setShowGitHub((v) => !v)} title="GitHub (Ctrl+Shift+H)">
-            GitHub
+          <button className={`action-btn ${sidePanel === "github" ? "active" : ""}`} onClick={() => togglePanel("github")} title={t("app.githubTitle")}>
+            <span className="codicon codicon-github-alt" />
           </button>
-          <button className="action-btn" onClick={() => setShowGit((v) => !v)} title="Git (Ctrl+Shift+G)">
-            Git
+          <button className={`action-btn ${sidePanel === "git" ? "active" : ""}`} onClick={() => togglePanel("git")} title={t("app.gitTitle")}>
+            <span className="codicon codicon-source-control" />
           </button>
-          <button className="action-btn" onClick={() => { setShowSearch((v) => !v); setShowTerminal(false); }} title="Pesquisar (Ctrl+Shift+F)">
-            🔍
+          <button className={`action-btn ${showSearch ? "active" : ""}`} onClick={() => { setShowSearch((v) => !v); setShowTerminal(false); }} title={t("app.searchTitle")}>
+            <span className="codicon codicon-search" />
           </button>
-          <button className="action-btn" onClick={() => setShowSettings((v) => !v)} title="Configurações">
-            ⚙️
+          <button className={`action-btn ${sidePanel === "settings" ? "active" : ""}`} onClick={() => togglePanel("settings")} title={t("common.settings")}>
+            <span className="codicon codicon-settings-gear" />
           </button>
-          <button className="action-btn" onClick={openFolder} title="Abrir pasta (Ctrl+K Ctrl+O)">
-            📂
+          <button className="action-btn" onClick={openFolder} title={t("app.openFolderHint")}>
+            <span className="codicon codicon-folder-opened" />
           </button>
         </div>
       </div>
@@ -705,6 +733,7 @@ function App() {
             rootPath={rootPath}
             onOpenFile={openFile}
             refreshSignal={fileTreeVersion}
+            activePath={activeTab?.path ?? null}
           />
           {activeTab && rootPath && (
             <OutlinePanel
@@ -763,21 +792,21 @@ function App() {
           )}
         </div>
 
-        {/* Right panels */}
-        {(showGit || showGitHub || showAi || showLspSetup || showSettings || showDebug || Object.values(extPanelVis).some(Boolean)) && (
+        {/* Right panel — one built-in panel at a time; extension panels stack below */}
+        {(sidePanel !== null || Object.values(extPanelVis).some(Boolean)) && (
           <div className="side-panel">
-            {showDebug && (
+            {sidePanel === "debug" && (
               <DebugPanel
                 activeFilePath={activeTab?.path ?? null}
                 workspaceRoot={rootPath}
                 onOpenFile={openFile}
               />
             )}
-            {showGit && <GitPanel repoPath={repoPath} />}
-            {showGitHub && <GitHubPanel repoPath={repoPath} />}
-            {showAi && <AiPanel workspaceRoot={rootPath} onRefresh={() => setFileTreeVersion((v) => v + 1)} onFileChanged={syncTabFromDisk} />}
-            {showLspSetup && <LspSetupPanel />}
-            {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+            {sidePanel === "git" && <GitPanel repoPath={repoPath} />}
+            {sidePanel === "github" && <GitHubPanel repoPath={repoPath} />}
+            {sidePanel === "ai" && <AiPanel workspaceRoot={rootPath} onRefresh={() => setFileTreeVersion((v) => v + 1)} onFileChanged={syncTabFromDisk} />}
+            {sidePanel === "lsp" && <LspSetupPanel />}
+            {sidePanel === "settings" && <SettingsPanel onClose={() => setSidePanel(null)} />}
             {extPanels.map((p) => {
               if (!extPanelVis[p.id]) return null;
               return <ExtensionPanelRenderer key={p.id} panel={p} manager={extManagerRef.current} />;
@@ -803,6 +832,9 @@ function App() {
         filePath={activeTab?.path}
         gitBranch={gitBranch}
       />
+
+      {/* Global toasts */}
+      <ToastHost />
     </div>
   );
 }
@@ -820,7 +852,7 @@ function ExtensionPanelRenderer({ panel, manager }: { panel: ExtensionPanel; man
     });
   }, [panel, manager]);
 
-  if (!ComponentRef.current) return <div className="side-panel-placeholder">Loading {panel.title}...</div>;
+  if (!ComponentRef.current) return <div className="side-panel-placeholder">{t("app.loadingExtension", { name: panel.title })}</div>;
   return <ComponentRef.current />;
 }
 

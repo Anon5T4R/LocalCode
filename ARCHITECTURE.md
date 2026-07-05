@@ -1,6 +1,6 @@
 # LocalCode — Arquitetura
 
-Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **React 19 / Vite** (frontend) e **Monaco** como editor. Tudo roda localmente: LSP, **debugger (DAP)**, IA (via `llama-server`), Git e terminal. UI em português.
+Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **React 19 / Vite** (frontend) e **Monaco** como editor. Tudo roda localmente: LSP, **debugger (DAP)**, IA (via `llama-server`), Git e terminal. UI em **pt/en/es** (i18n próprio, ver `lib/i18n.ts`).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -25,19 +25,26 @@ Editor de código desktop leve, construído com **Tauri v2** (backend Rust) + **
 
 ## Frontend (`src/`)
 
-- **`App.tsx`** — componente raiz. Detém o estado global: abas (`Tab[]`), pasta raiz, visibilidade dos painéis, branch do git. Responsável por: abrir/salvar/fechar abas, restaurar sessão na inicialização, interceptar o fechamento da janela (confirma abas sujas), auto-salvar a sessão (debounce 500ms) e os atalhos de teclado globais. **Caminho de digitação otimizado**: o buffer vivo de cada aba fica num `contentsRef` (Map por id) e o cursor num store externo (`lib/cursor.ts`, assinado direto por `StatusBar`/`Breadcrumbs`) — digitar/mover o cursor **não** re-renderiza o App; `Tab.content` no state só muda em abrir/salvar/recarregar, e `setTabs` por tecla só ocorre quando o flag `dirty` vira. Todos os leitores de conteúdo (salvar, sync de disco) usam o ref como fonte da verdade.
+- **`App.tsx`** — componente raiz. Detém o estado global: abas (`Tab[]`), pasta raiz, painel lateral ativo (`sidePanel: SidePanelId | null` — **um painel embutido por vez**, VS Code-style; mouse e teclado compartilham `togglePanel`), branch do git. Abrir pasta usa o chord **Ctrl+K Ctrl+O** (Ctrl+K arma sem `preventDefault`, preservando os chords do Monaco). Responsável por: abrir/salvar/fechar abas, restaurar sessão na inicialização, interceptar o fechamento da janela (confirma abas sujas), auto-salvar a sessão (debounce 500ms) e os atalhos de teclado globais. **Caminho de digitação otimizado**: o buffer vivo de cada aba fica num `contentsRef` (Map por id) e o cursor num store externo (`lib/cursor.ts`, assinado direto por `StatusBar`/`Breadcrumbs`) — digitar/mover o cursor **não** re-renderiza o App; `Tab.content` no state só muda em abrir/salvar/recarregar, e `setTabs` por tecla só ocorre quando o flag `dirty` vira. Todos os leitores de conteúdo (salvar, sync de disco) usam o ref como fonte da verdade.
 - **`editor/MonacoWrapper.tsx`** — embrulha `@monaco-editor/react`. Registra *uma vez* providers Monaco (`"*"` para todas as linguagens) que delegam ao LSP via backend: completion, hover, signature help, code action, definition, references, formatting (lêem o path atual via `pathRef`, pois o editor não remonta mais por aba). Usa `path` + `keepCurrentModel` → **um `ITextModel` por arquivo**, preservando undo/scroll/folding ao trocar de aba. `onChange` dispara `didChange` e aplica diagnósticos como markers. O tema segue `data-theme` via `MutationObserver`.
 - **`editor/Breadcrumbs.tsx`** — barra acima do editor com os segmentos do caminho + a cadeia de símbolos (LSP `documentSymbols`) que envolve o cursor; clicar num símbolo navega até ele.
 - **`explorer/FileExplorer.tsx`** — árvore de arquivos lazy (carrega filhos ao expandir). Criar/renomear/excluir + menu de contexto. `refreshSignal` (número incremental) força re-scan da raiz e das pastas expandidas.
 - **`outline/OutlinePanel.tsx`** — símbolos do documento via LSP (`documentSymbols`).
 - **`search/SearchPanel.tsx`** — busca full-text (regex / palavra inteira) delegada ao backend.
 - **`git/GitPanel.tsx`** e **`github/GitHubPanel.tsx`** — UI de Git local e integração GitHub (device flow OAuth ou PAT, listar/criar repos, clonar, abrir PR).
-- **`ai/`** — `AiPanel.tsx` (UI de chat/agente) + `agent.ts` (definição de ferramentas, system prompt, execução de ferramentas). Ver [Camada de IA](#camada-de-ia).
+- **`ai/`** — `AiPanel.tsx` (UI de chat/agente) + `agent.ts` (definição de ferramentas, system prompt, execução de ferramentas) + `Markdown.tsx` (markdown mínimo e seguro para o chat: blocos de código colorizados pelo tokenizer do Monaco já no bundle, botão copiar por bloco, `` `inline` `` e `**bold**`). Ver [Camada de IA](#camada-de-ia).
 - **`terminal/TerminalPanel.tsx`** — múltiplos terminais em abas, cada um (`TerminalInstance`) com seu xterm.js + sessão PTY. Abre no `workspaceRoot`, roteia I/O por `session_id` e o tema segue o `data-theme`.
 - **`palette/CommandPalette.tsx`** — paleta de comandos (`Ctrl+Shift+P`) e busca fuzzy de arquivos (`Ctrl+P`). Lista arquivos via `list_workspace_files` (respeita `.gitignore`); score por subsequência.
 - **`settings/SettingsPanel.tsx`** — configurações persistidas em `localStorage` (`lib/settings.ts`).
 - **`lsp-setup/LspSetupPanel.tsx`** — mostra quais language servers estão disponíveis (embutidos offline ou no PATH).
-- **`lib/`** — wrappers finos de `invoke()` por domínio (`fs`, `git`, `github`, `lsp`, `ai`, `terminal`, `session`, `settings`, `search`, `path`) + `extension.ts` (ExtensionManager) e `monaco-setup.ts` (worker do Monaco).
+- **`lib/`** — wrappers finos de `invoke()` por domínio (`fs`, `git`, `github`, `lsp`, `ai`, `terminal`, `session`, `settings`, `search`, `path`) + `extension.ts` (ExtensionManager), `monaco-setup.ts` (worker do Monaco) e `toast.tsx` (store global de toasts fora do React, padrão do `cursor.ts`; `<ToastHost/>` no App renderiza — todo feedback de erro/sucesso dos painéis passa por aqui, com auto-expire).
+
+**Ícones**: `@vscode/codicons` (fonte empacotada pelo Vite, offline). Nos ícones de arquivo do Explorer, glifo monocromático tintado por linguagem (`EXT_COLORS`). Regras de tamanho em `App.css` usam `button .codicon[class*="codicon-"]` para vencer a especificidade do `codicon.css`.
+
+**i18n** (`lib/i18n.ts`): dicionários **pt/en/es**; o pt é a fonte de verdade das chaves e `Record<MessageKey, string>` em en/es faz o compilador exigir paridade. `t(key, params)` interpola `{param}`. O locale vive num store externo (padrão cursor/toast) para código fora do React (agente, diálogos, toasts); o App assina via `useLocale()` e usa `key={locale}` na raiz — trocar o idioma remonta a árvore, então componentes memoizados pegam as strings novas sem assinar individualmente. Primeiro uso detecta `navigator.language`; depois persiste em settings. **Cuidado com shadowing**: não declare `const t = ...` num escopo que chama `t()` do i18n. O prompt do agente continua em PT, mas termina com `t("agent.respondIn")` — o modelo responde no idioma da UI; os outputs das ferramentas (`agent.*`) também são localizados.
+
+### Fluxo de confirmação do agente de IA
+O loop do agente (`runAgentLoop`) não morre mais numa confirmação: `processToolQueue` pausa guardando um snapshot (`PendingTool` = ferramenta + fila restante + resultados parciais + conversa) e `confirmTool`/`rejectTool` retomam o loop — inclusive devolvendo a **saída do comando** (`execute_command`) ou a recusa do usuário ao modelo. Mensagens com `role: "error"` são só de UI e são filtradas antes do envio ao modelo.
 
 ### Modelo de abas
 Cada `Tab` carrega `content` (buffer atual) e `savedContent`; `dirty = content !== savedContent`. Não há modelo Monaco por arquivo persistido — o `<Editor>` é remontado por aba (`key={tab.id}`).
@@ -96,7 +103,7 @@ Debugger integrado via **Debug Adapter Protocol**, pensado para funcionar sem co
 
 | Dado | Onde |
 |------|------|
-| Settings (tema, idioma, ngl/ctx, modelsDir, githubClientId) | `localStorage` (`localcode.settings`) |
+| Settings (tema, idioma pt/en/es, ngl/ctx, modelsDir, githubClientId) | `localStorage` (`localcode.settings`) |
 | Sessão (abas, raiz, cursores) | `app_data/session.json` |
 | Token GitHub | Cofre de credenciais do SO via crate `keyring` (Windows Credential Manager / macOS Keychain / Linux Secret Service). `.github_token.bin` legado é migrado e apagado no primeiro acesso. **No Linux** requer um Secret Service ativo (gnome-keyring/KWallet); em ambiente headless/minimalista o salvamento do token falha com erro visível. |
 | llama-server baixado | `app_data/binaries/llama/` |

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../lib/i18n";
 
 interface LspServerStatus {
   name: string;
@@ -16,7 +17,7 @@ export function LspSetupPanel() {
       const list = await invoke<LspServerStatus[]>("check_lsp_servers");
       setServers(list);
     } catch (e) {
-      setLog((prev) => [...prev, `Erro: ${e}`]);
+      setLog((prev) => [...prev, t("lsp.checkFailed", { error: String(e) })]);
     }
   }, []);
 
@@ -30,18 +31,20 @@ export function LspSetupPanel() {
   return (
     <div className="lsp-setup-panel">
       <div className="lsp-setup-header">
-        <span>LSP Servers</span>
-        <button className="lsp-refresh-btn" onClick={refresh}>↻</button>
+        <span>{t("lsp.title")}</span>
+        <button className="lsp-refresh-btn" onClick={refresh} title={t("common.refresh")}>
+          <span className="codicon codicon-refresh" />
+        </button>
       </div>
 
       {allInstalled ? (
         <div className="lsp-all-ok">
-          ✅ Todos os language servers estão instalados!
-          {offlineCount > 0 && <span className="lsp-offline-info"> ({offlineCount} embutidos)</span>}
+          ✅ {t("lsp.allInstalled")}
+          {offlineCount > 0 && <span className="lsp-offline-info"> {t("lsp.bundled", { count: offlineCount })}</span>}
         </div>
       ) : (
         <div className="lsp-setup-info">
-          Language servers fornecem autocomplete, diagnósticos, hover, etc.
+          {t("lsp.info")}
         </div>
       )}
 
@@ -68,7 +71,7 @@ export function LspSetupPanel() {
 
       {log.length > 0 && (
         <div className="lsp-log">
-          <h4>Log:</h4>
+          <h4>{t("lsp.log")}</h4>
           {log.map((line, i) => (
             <pre key={i} className="lsp-log-line">{line}</pre>
           ))}

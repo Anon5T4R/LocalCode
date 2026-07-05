@@ -18,6 +18,9 @@
   --danger: #f14c4c;
   --success: #4ec9b0;
   --warning: #cca700;
+  --diff-add: #4ec9b0;
+  --diff-del: #f14c4c;
+  --diff-hunk: #569cd6;
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #424242;
   --scrollbar-hover: #4f4f4f;
@@ -47,6 +50,9 @@
   --danger: #c5201d;
   --success: #1d7c6a;
   --warning: #806900;
+  --diff-add: #1d7c6a;
+  --diff-del: #c5201d;
+  --diff-hunk: #0065bd;
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #c0c0c0;
   --scrollbar-hover: #a8a8a8;
@@ -69,6 +75,9 @@
   --danger: #f48771;
   --success: #89d185;
   --warning: #ffe600;
+  --diff-add: #89d185;
+  --diff-del: #f48771;
+  --diff-hunk: #6fc3df;
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #6fc3df;
   --scrollbar-hover: #9fd8ef;
@@ -94,6 +103,50 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: var(--scrollbar-bg); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+
+/* ---- Keyboard focus (a11y) ---- */
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Codicons inside compact UI buttons.
+   The extra [class*=] matches codicon.css's own specificity. */
+button .codicon[class*="codicon-"] { font-size: 14px; }
+.title-tab-close .codicon[class*="codicon-"] { font-size: 12px; }
+
+/* ---- Shared icon button ----
+   One rule for every small glyph button across the panels. */
+.git-action-btn, .github-action-btn, .ai-config-btn, .explorer-action-btn,
+.lsp-refresh-btn, .terminal-close-btn, .title-tab-close, .ai-copy-btn,
+.settings-close-btn, .md-code-copy {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+}
+
+.git-action-btn:hover, .github-action-btn:hover, .ai-config-btn:hover,
+.explorer-action-btn:hover, .lsp-refresh-btn:hover, .terminal-close-btn:hover,
+.title-tab-close:hover, .ai-copy-btn:hover, .settings-close-btn:hover,
+.md-code-copy:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.git-action-btn:disabled, .github-action-btn:disabled, .ai-config-btn:disabled,
+.explorer-action-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 
 /* ---- App layout ---- */
 .app {
@@ -179,20 +232,12 @@ html, body, #root {
   font-size: 10px;
 }
 
-.title-tab-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
+.title-tab-warning {
+  color: var(--warning);
   cursor: pointer;
-  font-size: 10px;
-  padding: 2px;
-  border-radius: 3px;
-  line-height: 1;
-}
-
-.title-tab-close:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
+  margin-right: 4px;
+  font-size: 12px !important;
+  vertical-align: text-bottom;
 }
 
 .title-tab-new {
@@ -241,6 +286,11 @@ html, body, #root {
 .action-btn:disabled:hover {
   background: none;
   color: var(--text-secondary);
+}
+
+.action-btn.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
 /* ---- Workspace ---- */
@@ -292,21 +342,6 @@ html, body, #root {
   gap: 2px;
 }
 
-.explorer-action-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.explorer-action-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 .explorer-item {
   display: flex;
   align-items: center;
@@ -322,9 +357,13 @@ html, body, #root {
   background: var(--bg-hover);
 }
 
+.explorer-item.active {
+  background: var(--bg-active);
+}
+
 .explorer-icon {
-  font-size: 10px;
-  width: 14px;
+  font-size: 14px !important;
+  width: 16px;
   text-align: center;
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -666,21 +705,6 @@ html, body, #root {
   gap: 2px;
 }
 
-.git-action-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.git-action-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 .git-tabs, .github-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
@@ -726,6 +750,12 @@ html, body, #root {
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+}
+
+.git-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .git-status-item {
@@ -867,6 +897,56 @@ html, body, #root {
   font-size: 12px;
 }
 
+/* ---- Git diff overlay ---- */
+.git-diff-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.git-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-diff-mode {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.git-diff-path {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-diff-body {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.git-diff-line {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.git-diff-line.add { color: var(--diff-add); }
+.git-diff-line.del { color: var(--diff-del); }
+.git-diff-line.hunk { color: var(--diff-hunk); }
+
 .git-hint {
   margin-top: 8px;
   font-size: 11px;
@@ -877,14 +957,6 @@ html, body, #root {
   padding: 12px;
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.git-message, .github-message {
-  padding: 4px 12px;
-  font-size: 11px;
-  color: var(--success);
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border);
 }
 
 /* ---- GitHub panel ---- */
@@ -980,21 +1052,6 @@ html, body, #root {
 .github-repo-desc {
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.github-action-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.github-action-btn:hover {
-  background: var(--bg-hover);
-  color: var(--danger);
 }
 
 .github-device-flow {
@@ -1135,21 +1192,6 @@ html, body, #root {
   border-bottom: 1px solid var(--border);
 }
 
-.terminal-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.terminal-close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 .terminal-container {
   flex: 1;
   padding: 4px;
@@ -1233,6 +1275,37 @@ html, body, #root {
   overflow-y: auto;
 }
 
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.settings-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
 .settings-label {
   display: block;
   font-size: 11px;
@@ -1241,7 +1314,24 @@ html, body, #root {
   margin-top: 8px;
 }
 
-.settings-panel select.github-input {
+.settings-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+  border-radius: 3px;
+  outline: none;
+  font-family: var(--font-ui);
+}
+
+.settings-input:focus {
+  border-color: var(--accent);
+}
+
+select.settings-input {
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
@@ -1275,21 +1365,6 @@ html, body, #root {
 .ai-header-actions {
   display: flex;
   gap: 2px;
-}
-
-.ai-config-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.ai-config-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .ai-config-error {
@@ -1526,21 +1601,6 @@ html, body, #root {
   margin-top: 2px;
 }
 
-.ai-copy-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.ai-copy-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 .ai-reasoning {
   font-size: 11px;
   color: var(--text-muted);
@@ -1702,21 +1762,6 @@ html, body, #root {
   position: sticky;
   top: 0;
   z-index: 1;
-}
-
-.lsp-refresh-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.lsp-refresh-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .lsp-all-ok {
@@ -2094,4 +2139,198 @@ html, body, #root {
 
 .dbg-exec-line {
   background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+/* ---- AI: error message ---- */
+.ai-msg-error-content {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ai-msg-error-content .codicon {
+  font-size: 13px;
+  flex-shrink: 0;
+  position: relative;
+  top: 2px;
+}
+
+/* ---- AI: markdown ---- */
+.md-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.md-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-inline-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.md-code-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 2px 8px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.md-code-lang {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.md-code-body {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* ---- Toasts ---- */
+.toast-host {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--status-bar-height) + 12px);
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(420px, 60vw);
+}
+
+.toast {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  animation: toast-in 0.15s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  position: relative;
+  top: 2px;
+}
+
+.toast-success .toast-icon { color: var(--success); }
+.toast-error .toast-icon { color: var(--danger); }
+.toast-info .toast-icon { color: var(--accent); }
+
+.toast-error { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
+.toast-success { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+
+.toast-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Command palette ---- */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.palette {
+  width: min(640px, 90vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.palette-input {
+  border: none;
+  outline: none;
+  padding: 12px 14px;
+  font-size: 14px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+}
+
+.palette-list {
+  overflow-y: auto;
+}
+
+.palette-empty {
+  padding: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.palette-item.selected {
+  background: var(--bg-active);
+}
+
+.palette-item-label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.palette-item-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

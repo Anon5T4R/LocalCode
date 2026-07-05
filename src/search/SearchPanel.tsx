@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { searchFiles, replaceInFiles, type SearchMatch } from "../lib/search";
+import { t } from "../lib/i18n";
 
 interface SearchPanelProps {
   rootPath: string | null;
@@ -50,8 +51,8 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
     const fileCount = new Set(results.map((r) => r.path)).size;
     const { ask } = await import("@tauri-apps/plugin-dialog");
     const ok = await ask(
-      `Substituir "${query}" por "${replaceText}" em ${results.length} ocorrência(s) de ${fileCount} arquivo(s)?\n\nEsta ação grava no disco e não pode ser desfeita.`,
-      { title: "Substituir em arquivos", kind: "warning" }
+      t("search.replaceConfirm", { query, replace: replaceText, count: results.length, files: fileCount }),
+      { title: t("search.replaceTitle"), kind: "warning" }
     );
     if (!ok) return;
     setReplacing(true);
@@ -60,10 +61,10 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
       onReplaced?.();
       doSearch(query);
       const { message } = await import("@tauri-apps/plugin-dialog");
-      await message(`${res.replacements} substituição(ões) em ${res.files_changed} arquivo(s).`, { title: "Concluído" });
+      await message(t("search.replaceDone", { replacements: res.replacements, files: res.files_changed }), { title: t("search.doneTitle") });
     } catch (e) {
       const { message } = await import("@tauri-apps/plugin-dialog");
-      await message(`Erro: ${e}`, { title: "Erro", kind: "error" });
+      await message(t("search.failed", { error: String(e) }), { title: "Error", kind: "error" });
     } finally {
       setReplacing(false);
     }
@@ -82,23 +83,23 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
   return (
     <div className="search-panel">
       <div className="search-header">
-        <span>Pesquisar</span>
+        <span>{t("search.title")}</span>
         <button
           className="search-opt"
           onClick={() => setShowReplace((v) => !v)}
-          title="Mostrar substituição"
+          title={t("search.showReplace")}
           style={{ marginLeft: "auto", cursor: "pointer" }}
         >
-          {showReplace ? "▾" : "▸"} Substituir
+          {showReplace ? "▾" : "▸"} {t("search.replace")}
         </button>
         {results.length > 0 && (
-          <span className="search-count">{results.length} resultados</span>
+          <span className="search-count">{t("search.results", { count: results.length })}</span>
         )}
       </div>
       <div className="search-input-area">
         <input
           className="search-input"
-          placeholder="Buscar nos arquivos..."
+          placeholder={t("search.placeholder")}
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={(e) => {
@@ -109,7 +110,7 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
           <div className="search-replace-row" style={{ display: "flex", gap: 4, marginTop: 4 }}>
             <input
               className="search-input"
-              placeholder="Substituir por..."
+              placeholder={t("search.replacePlaceholder")}
               value={replaceText}
               onChange={(e) => setReplaceText(e.target.value)}
               style={{ flex: 1 }}
@@ -118,10 +119,10 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
               className="search-opt"
               onClick={handleReplaceAll}
               disabled={replacing || results.length === 0 || !query.trim()}
-              title="Substituir todas as ocorrências"
+              title={t("search.replaceAllTitle")}
               style={{ whiteSpace: "nowrap", cursor: "pointer" }}
             >
-              {replacing ? "..." : "Todos"}
+              {replacing ? "..." : t("search.replaceAll")}
             </button>
           </div>
         )}
@@ -141,9 +142,9 @@ export function SearchPanel({ rootPath, onOpenFile, onReplaced }: SearchPanelPro
         </label>
       </div>
       <div className="search-results">
-        {loading && <div className="search-empty">Buscando...</div>}
+        {loading && <div className="search-empty">{t("search.searching")}</div>}
         {!loading && searched && results.length === 0 && (
-          <div className="search-empty">Nenhum resultado</div>
+          <div className="search-empty">{t("common.noResults")}</div>
         )}
         {!loading &&
           groupByFile().map(([filePath, matches]) => (

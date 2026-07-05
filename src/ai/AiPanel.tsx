@@ -6,14 +6,37 @@ import {
   waitHealthy, streamChat,
 } from "../lib/ai";
 import { loadSettings, saveSettings } from "../lib/settings";
-import { AGENT_SYSTEM_PROMPT, parseToolCall, executeTool, normalizeArgs } from "./agent";
-import type { ToolResult } from "./agent";
+import { getAgentSystemPrompt, parseToolCall, executeTool, normalizeArgs } from "./agent";
+import { MarkdownContent } from "./Markdown";
+import { toast } from "../lib/toast";
+import { t } from "../lib/i18n";
 
 interface AiPanelProps {
   workspaceRoot?: string | null;
   onRefresh?: () => void;
   onFileChanged?: (path: string) => void;
 }
+
+interface QueuedTool {
+  tool: string;
+  args: Record<string, any>;
+}
+
+/** A tool waiting for user confirmation, plus everything needed to resume the
+ *  agent loop after the decision: the rest of this round's tool queue, the
+ *  results accumulated so far and the conversation snapshot. */
+interface PendingTool {
+  tool: string;
+  args: Record<string, any>;
+  queue: QueuedTool[];
+  resultsSoFar: string;
+  messages: ChatMsg[];
+}
+
+const MAX_ROUNDS = 10;
+
+/** Tools that run without confirmation. */
+const AUTO_TOOLS = new Set(["create_file", "edit_file", "read_file", "list_dir", "search_files", "rename_file"]);
 
 export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileChanged }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -26,15 +49,14 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
   const [configError, setConfigError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(true);
   const [agentMode, setAgentMode] = useState(true);
-  const [pendingTool, setPendingTool] = useState<{ tool: string; args: Record<string, any> } | null>(null);
+  const [pendingTool, setPendingTool] = useState<PendingTool | null>(null);
   const [toolHistory, setToolHistory] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, toolHistory]);
+  }, [messages, toolHistory, pendingTool]);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -52,15 +74,15 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
     setConfigError(null);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, multiple: false, title: "Selecionar pasta de modelos GGUF" });
+      const selected = await open({ directory: true, multiple: false, title: t("ai.selectModelsDir") });
       if (selected) {
         setModelDir(selected);
         const list = await listModels(selected);
         setModels(list);
-        if (list.length === 0) setConfigError("Nenhum arquivo .gguf encontrado nesta pasta.");
+        if (list.length === 0) setConfigError(t("ai.noModels"));
       }
     } catch (e: any) {
-      setConfigError(`Erro ao listar modelos: ${e}`);
+      setConfigError(t("ai.listModelsFailed", { error: String(e) }));
     }
   }, []);
 
@@ -92,100 +114,78 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
     setStreaming(false);
   }, []);
 
-  const executeAgentTool = useCallback(async (tool: string, rawArgs: Record<string, any>): Promise<ToolResult | null> => {
-    const args = normalizeArgs(rawArgs, tool);
+  const logTool = useCallback((line: string) => {
+    setToolHistory((prev) => [...prev, line]);
+  }, []);
 
-    // Tools que executam automaticamente sem confirmação
-    const autoTools = new Set(["create_file", "edit_file", "read_file", "list_dir", "search_files", "rename_file"]);
-    if (autoTools.has(tool)) {
-      setToolHistory((prev) => [...prev, `🔧 ${tool}(${JSON.stringify(args)})...`]);
-      const result = await executeTool(tool, args, workspaceRoot || undefined);
-      setToolHistory((prev) => [...prev, result.success ? `  ✅ ${result.output}` : `  ❌ ${result.output}`]);
-      if (result.success && (tool === "create_file" || tool === "edit_file" || tool === "rename_file")) {
-        onRefresh?.();
-        if (result.affectedPath) onFileChanged?.(result.affectedPath);
-      }
-      return result;
-    }
-
-    // delete_file e execute_command requerem confirmação
-    setPendingTool({ tool, args });
-    return null;
-  }, [workspaceRoot, onRefresh, onFileChanged]);
-
-  const confirmTool = useCallback(async () => {
-    if (!pendingTool) return;
-    const { tool, args } = pendingTool;
-    setPendingTool(null);
-    setToolHistory((prev) => [...prev, `🔧 ${tool}(${JSON.stringify(args)})...`]);
-
-    if (tool === "execute_command") {
-      setToolHistory((prev) => [...prev, `  ⚠️ Confirme o comando no diálogo abaixo`]);
-      return;
-    }
-
-    const result = await executeTool(tool, args, workspaceRoot || undefined);
-    setToolHistory((prev) => [...prev, result.success ? `  ✅ ${result.output}` : `  ❌ ${result.output}`]);
-
-    if (result.success && (tool === "create_file" || tool === "edit_file" || tool === "delete_file" || tool === "rename_file")) {
+  /** Executes one auto tool and returns the line to feed back to the model. */
+  const runAutoTool = useCallback(async (tc: QueuedTool): Promise<string> => {
+    const args = normalizeArgs(tc.args, tc.tool);
+    logTool(`🔧 ${tc.tool}(${JSON.stringify(args)})...`);
+    const result = await executeTool(tc.tool, args, workspaceRoot || undefined);
+    logTool(result.success ? `  ✅ ${result.output}` : `  ❌ ${result.output}`);
+    if (result.success && (tc.tool === "create_file" || tc.tool === "edit_file" || tc.tool === "rename_file")) {
       onRefresh?.();
+      if (result.affectedPath) onFileChanged?.(result.affectedPath);
     }
-  }, [pendingTool, workspaceRoot, onRefresh]);
+    return `[${tc.tool}] ${result.success ? "OK" : "ERRO"}: ${result.output}\n`;
+  }, [workspaceRoot, onRefresh, onFileChanged, logTool]);
 
-  const rejectTool = useCallback(() => {
-    setPendingTool(null);
-    setToolHistory((prev) => [...prev, `  ⛔ Ação cancelada pelo usuário`]);
-  }, []);
-
-  const handleConfirmCommand = useCallback(async (command: string) => {
-    setPendingTool(null);
-    setToolHistory((prev) => [...prev, `  ▶️ Executando: ${command}`]);
-    try {
-      const result: string = await invoke("execute_terminal_command", { command });
-      setToolHistory((prev) => [...prev, `  ✅ ${result}`]);
-    } catch (e: any) {
-      setToolHistory((prev) => [...prev, `  ❌ Erro: ${e.message || e}`]);
+  /**
+   * Runs a queue of tool calls. Auto tools execute inline; a tool that needs
+   * confirmation pauses everything (stores the queue + conversation) and
+   * returns null — confirmTool/rejectTool resume from that snapshot.
+   */
+  const processToolQueue = useCallback(async (
+    queue: QueuedTool[],
+    resultsSoFar: string,
+    conversation: ChatMsg[],
+  ): Promise<string | null> => {
+    let results = resultsSoFar;
+    for (let i = 0; i < queue.length; i++) {
+      const tc = queue[i];
+      if (AUTO_TOOLS.has(tc.tool)) {
+        results += await runAutoTool(tc);
+      } else {
+        setPendingTool({
+          tool: tc.tool,
+          args: normalizeArgs(tc.args, tc.tool),
+          queue: queue.slice(i + 1),
+          resultsSoFar: results,
+          messages: conversation,
+        });
+        return null; // paused — the confirm/reject handlers continue the loop
+      }
     }
-  }, []);
+    return results;
+  }, [runAutoTool]);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming || !status.port) return;
-    setInput("");
-
-    const userMsg: ChatMsg = { role: "user", content: text };
-    let currentMessages: ChatMsg[] = [...messages, userMsg];
-    setMessages(currentMessages);
+  /** The agent loop: stream a reply, run tools, feed results back, repeat. */
+  const runAgentLoop = useCallback(async (startMessages: ChatMsg[]) => {
+    let currentMessages = startMessages;
     setStreaming(true);
-    setToolHistory([]);
-
-    const sysPrompt = agentMode ? AGENT_SYSTEM_PROMPT : "Você é um assistente de programação útil. Responda em português.";
-
     try {
       const abort = new AbortController();
       abortRef.current = abort;
+      const sysPrompt = agentMode ? getAgentSystemPrompt() : t("ai.chatSystemPrompt");
 
-      // Loop allowing multiple tool execution rounds
-      for (let round = 0; round < 10; round++) {
+      for (let round = 0; round < MAX_ROUNDS; round++) {
         if (abort.signal.aborted) break;
 
-        const assistantMsg: ChatMsg = { role: "assistant", content: "" };
-        const msgsWithAssistant = [...currentMessages, assistantMsg];
-        setMessages(msgsWithAssistant);
+        setMessages([...currentMessages, { role: "assistant", content: "" }]);
 
         let fullContent = "";
         let collectedToolCalls: any[] = [];
 
         await streamChat(
           status.port,
-          [{ role: "system", content: sysPrompt }, ...currentMessages],
+          [
+            { role: "system", content: sysPrompt },
+            ...currentMessages.filter((m) => m.role !== "error"),
+          ],
           (delta: StreamDelta) => {
-            if (delta.content) {
-              fullContent += delta.content;
-            }
-            if (delta.tool_calls) {
-              collectedToolCalls = [...collectedToolCalls, ...delta.tool_calls];
-            }
+            if (delta.content) fullContent += delta.content;
+            if (delta.tool_calls) collectedToolCalls = [...collectedToolCalls, ...delta.tool_calls];
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
@@ -204,66 +204,108 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
 
         if (abort.signal.aborted) break;
 
-        // Determine tool calls to execute
-        let toolCallsToExec: { tool: string; args: Record<string, any> }[] = [];
-
+        // Native tool_calls take precedence; fall back to the JSON convention.
+        const toolCalls: QueuedTool[] = [];
         if (collectedToolCalls.length > 0) {
           for (const tc of collectedToolCalls) {
             try {
-              const parsed = JSON.parse(tc.function.arguments);
-              toolCallsToExec.push({ tool: tc.function.name, args: parsed });
-            } catch {
-              // skip malformed
-            }
+              toolCalls.push({ tool: tc.function.name, args: JSON.parse(tc.function.arguments) });
+            } catch { /* skip malformed */ }
           }
         } else {
           const parsed = parseToolCall(fullContent);
-          if (parsed) {
-            toolCallsToExec.push(parsed);
-          }
+          if (parsed) toolCalls.push(parsed);
         }
 
-        if (toolCallsToExec.length === 0) break; // no more tools, done
-
-        // Execute tools and feed results back
-        let toolResultsStr = "";
-        for (const tc of toolCallsToExec) {
-          const result = await executeAgentTool(tc.tool, tc.args);
-          if (result) {
-            toolResultsStr += `[${tc.tool}] ${result.success ? "OK" : "ERRO"}: ${result.output}\n`;
-            if (result.success && (tc.tool === "create_file" || tc.tool === "edit_file" || tc.tool === "rename_file")) {
-              onRefresh?.();
-              if (result.affectedPath) onFileChanged?.(result.affectedPath);
-            }
-          } else {
-            // Tool requires confirmation - break out of loop, user must respond
-            toolResultsStr = "";
-            break;
-          }
-        }
-
-        if (!toolResultsStr) {
-          // pending confirmation, stop loop
-          currentMessages = [...currentMessages, { role: "assistant", content: fullContent, tool_calls: collectedToolCalls }];
-          setMessages(currentMessages);
-          break;
-        }
-
-        const toolResultMsg: ChatMsg = {
-          role: "user",
-          content: `Resultados das ferramentas:\n${toolResultsStr}\nContinue com a próxima etapa ou responda ao usuário.`,
+        const assistantMsg: ChatMsg = {
+          role: "assistant",
+          content: fullContent,
+          tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
         };
-        currentMessages = [...currentMessages, { role: "assistant", content: fullContent, tool_calls: collectedToolCalls }, toolResultMsg];
+        currentMessages = [...currentMessages, assistantMsg];
+        setMessages(currentMessages);
+
+        if (toolCalls.length === 0) break; // no tools → done
+
+        const results = await processToolQueue(toolCalls, "", currentMessages);
+        if (results === null) {
+          // Paused on a confirmation — the input stays blocked by pendingTool
+          // and confirmTool/rejectTool re-enter the loop.
+          setStreaming(false);
+          return;
+        }
+
+        currentMessages = [...currentMessages, {
+          role: "user",
+          content: t("ai.toolResults", { results }),
+        }];
         setMessages(currentMessages);
       }
     } catch (e: any) {
       if (e.name !== "AbortError") {
-        setMessages((prev) => [...prev, { role: "user", content: `Erro: ${e.message || e}` }]);
+        setMessages((prev) => [...prev, { role: "error", content: `${e.message || e}` }]);
       }
     }
     setStreaming(false);
     abortRef.current = null;
-  }, [input, streaming, status.port, messages, agentMode, executeAgentTool, onRefresh, onFileChanged]);
+  }, [agentMode, status.port, processToolQueue]);
+
+  /** Continues the agent loop after a confirmation decision. */
+  const resumeAfterDecision = useCallback(async (pending: PendingTool, resultLine: string) => {
+    setPendingTool(null);
+    const results = await processToolQueue(pending.queue, pending.resultsSoFar + resultLine, pending.messages);
+    if (results === null) return; // paused again on another confirmation
+    const next: ChatMsg[] = [...pending.messages, {
+      role: "user",
+      content: t("ai.toolResults", { results }),
+    }];
+    setMessages(next);
+    await runAgentLoop(next);
+  }, [processToolQueue, runAgentLoop]);
+
+  const confirmTool = useCallback(async () => {
+    if (!pendingTool) return;
+    const { tool, args } = pendingTool;
+    logTool(`🔧 ${tool}(${JSON.stringify(args)})...`);
+
+    let resultLine: string;
+    if (tool === "execute_command") {
+      logTool(`  ▶️ ${t("ai.executing", { command: args.command })}`);
+      try {
+        const output: string = await invoke("execute_terminal_command", { command: args.command });
+        logTool(`  ✅ ${output}`);
+        resultLine = `[execute_command] OK:\n${output}\n`;
+      } catch (e: any) {
+        logTool(`  ❌ Erro: ${e.message || e}`);
+        resultLine = `[execute_command] ERRO: ${e.message || e}\n`;
+      }
+    } else {
+      const result = await executeTool(tool, args, workspaceRoot || undefined);
+      logTool(result.success ? `  ✅ ${result.output}` : `  ❌ ${result.output}`);
+      if (result.success && tool === "delete_file") onRefresh?.();
+      resultLine = `[${tool}] ${result.success ? "OK" : "ERRO"}: ${result.output}\n`;
+    }
+    await resumeAfterDecision(pendingTool, resultLine);
+  }, [pendingTool, workspaceRoot, onRefresh, logTool, resumeAfterDecision]);
+
+  const rejectTool = useCallback(async () => {
+    if (!pendingTool) return;
+    logTool(`  ⛔ ${t("ai.userCancelled")}`);
+    await resumeAfterDecision(
+      pendingTool,
+      `[${pendingTool.tool}] RECUSADO: ${t("ai.rejectedResult")}\n`
+    );
+  }, [pendingTool, logTool, resumeAfterDecision]);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || streaming || pendingTool || !status.port) return;
+    setInput("");
+    setToolHistory([]);
+    const next: ChatMsg[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    await runAgentLoop(next);
+  }, [input, streaming, pendingTool, status.port, messages, runAgentLoop]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -272,30 +314,35 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
     }
   };
 
+  const copyMessage = useCallback((content: string) => {
+    navigator.clipboard.writeText(content);
+    toast.success(t("ai.copied"));
+  }, []);
+
   if (showConfig || !status.running) {
     return (
       <div className="ai-panel">
         <div className="ai-header">
-          <span>IA</span>
-          {status.running && <button className="ai-config-btn" onClick={() => setShowConfig(false)}>Chat</button>}
+          <span>{t("ai.title")}</span>
+          {status.running && <button className="ai-config-btn" onClick={() => setShowConfig(false)}>{t("ai.chat")}</button>}
         </div>
         <div className="ai-config">
-          <h3>Configurar IA Local</h3>
+          <h3>{t("ai.configTitle")}</h3>
 
-          <label>Pasta dos modelos (.gguf)</label>
+          <label>{t("ai.modelsDir")}</label>
           <div className="ai-input-row">
             <input value={modelDir} onChange={(e) => setModelDir(e.target.value)} />
-            <button onClick={handleBrowseModels}>Procurar</button>
+            <button onClick={handleBrowseModels}>{t("ai.browse")}</button>
           </div>
 
           {models.length > 0 && (
             <div className="ai-model-list">
-              <h4>Modelos encontrados:</h4>
+              <h4>{t("ai.modelsFound")}</h4>
               {models.map((m) => (
                 <div key={m.path} className="ai-model-item">
                   <span className="ai-model-name">{m.name}</span>
                   <span className="ai-model-size">{m.size_gb.toFixed(1)} GB</span>
-                  <button onClick={() => handleStartLlm(m.path)}>Usar</button>
+                  <button onClick={() => handleStartLlm(m.path)}>{t("ai.use")}</button>
                 </div>
               ))}
             </div>
@@ -308,14 +355,14 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
           {loading && (
             <div className="ai-loading-overlay">
               <div className="ai-loading-spinner"></div>
-              <span>Carregando modelo... isso pode levar alguns minutos</span>
+              <span>{t("ai.loadingModel")}</span>
             </div>
           )}
 
           {status.running && (
             <div className="ai-status-row">
-              <span>🟢 Rodando: {status.model.split(/[\\/]/).pop()}</span>
-              <button onClick={handleStopLlm}>Parar</button>
+              <span>🟢 {t("ai.running", { name: status.model.split(/[\\/]/).pop() ?? "" })}</span>
+              <button onClick={handleStopLlm}>{t("ai.stop")}</button>
             </div>
           )}
         </div>
@@ -326,20 +373,20 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
   return (
     <div className="ai-panel">
       <div className="ai-header">
-        <span>IA {agentMode ? "(Agente)" : "(Chat)"}</span>
+        <span>{t("ai.title")} {agentMode ? t("ai.agentSuffix") : t("ai.chatSuffix")}</span>
         <div className="ai-header-actions">
           <button
             className="ai-config-btn"
             onClick={() => setAgentMode(!agentMode)}
-            title={agentMode ? "Modo chat" : "Modo agente"}
+            title={agentMode ? t("ai.toChatMode") : t("ai.toAgentMode")}
           >
-            {agentMode ? "💬" : "🤖"}
+            <span className={`codicon ${agentMode ? "codicon-comment" : "codicon-hubot"}`} />
           </button>
-          <button className="ai-config-btn" onClick={() => setShowConfig(true)} title="Configurar">
-            ⚙️
+          <button className="ai-config-btn" onClick={() => setShowConfig(true)} title={t("ai.configure")}>
+            <span className="codicon codicon-settings-gear" />
           </button>
-          <button className="ai-config-btn" onClick={handleStopLlm} title="Parar IA">
-            ⏹
+          <button className="ai-config-btn" onClick={handleStopLlm} title={t("ai.stopAi")}>
+            <span className="codicon codicon-debug-stop" />
           </button>
         </div>
       </div>
@@ -347,17 +394,32 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
       <div className="ai-chat">
         {messages.map((msg, i) => (
           <div key={i} className={`ai-msg ai-msg-${msg.role}`}>
-            {msg.content && <div className="ai-msg-content">{msg.content}</div>}
+            {msg.role === "error" ? (
+              <div className="ai-msg-content ai-msg-error-content">
+                <span className="codicon codicon-error" /> {msg.content}
+              </div>
+            ) : msg.role === "assistant" ? (
+              msg.content && (
+                <div className="ai-msg-content">
+                  <MarkdownContent
+                    text={msg.content}
+                    streaming={streaming && i === messages.length - 1}
+                  />
+                </div>
+              )
+            ) : (
+              msg.content && <div className="ai-msg-content">{msg.content}</div>
+            )}
             {msg.reasoning && (
               <details className="ai-reasoning">
-                <summary>Pensamento</summary>
+                <summary>{t("ai.thinking")}</summary>
                 {msg.reasoning}
               </details>
             )}
             {msg.role === "assistant" && msg.content && (
               <div className="ai-msg-actions">
-                <button className="ai-copy-btn" onClick={() => navigator.clipboard.writeText(msg.content)} title="Copiar resposta">
-                  📋
+                <button className="ai-copy-btn" onClick={() => copyMessage(msg.content)} title={t("ai.copyAnswer")}>
+                  <span className="codicon codicon-copy" />
                 </button>
               </div>
             )}
@@ -375,22 +437,15 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
         {pendingTool && (
           <div className="ai-tool-confirm">
             <div className="ai-tool-confirm-header">
-              {pendingTool.tool === "execute_command" ? "⚠️ Comando no Terminal" : `🔧 ${pendingTool.tool}`}
+              {pendingTool.tool === "execute_command" ? `⚠️ ${t("ai.terminalCommand")}` : `🔧 ${pendingTool.tool}`}
             </div>
             <pre className="ai-tool-confirm-detail">{JSON.stringify(pendingTool.args, null, 2)}</pre>
-            {pendingTool.tool === "execute_command" ? (
-              <div className="ai-tool-confirm-actions">
-                <button className="ai-confirm-btn" onClick={() => handleConfirmCommand(pendingTool.args.command)}>
-                  ▶️ Executar Comando
-                </button>
-                <button className="ai-reject-btn" onClick={rejectTool}>Cancelar</button>
-              </div>
-            ) : (
-              <div className="ai-tool-confirm-actions">
-                <button className="ai-confirm-btn" onClick={confirmTool}>✅ Confirmar</button>
-                <button className="ai-reject-btn" onClick={rejectTool}>❌ Recusar</button>
-              </div>
-            )}
+            <div className="ai-tool-confirm-actions">
+              <button className="ai-confirm-btn" onClick={confirmTool}>
+                {pendingTool.tool === "execute_command" ? `▶️ ${t("ai.runCommand")}` : `✅ ${t("ai.confirm")}`}
+              </button>
+              <button className="ai-reject-btn" onClick={rejectTool}>{t("ai.reject")}</button>
+            </div>
           </div>
         )}
 
@@ -402,16 +457,16 @@ export const AiPanel = memo(function AiPanel({ workspaceRoot, onRefresh, onFileC
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={agentMode ? "Peça algo (ex: crie um arquivo...)" : "Pergunte algo..."}
-          disabled={streaming}
+          placeholder={agentMode ? t("ai.agentPlaceholder") : t("ai.chatPlaceholder")}
+          disabled={streaming || pendingTool !== null}
         />
         {streaming ? (
-          <button className="ai-stop-btn" onClick={handleAbort} title="Parar resposta">
-            ■
+          <button className="ai-stop-btn" onClick={handleAbort} title={t("ai.stopResponse")}>
+            <span className="codicon codicon-debug-stop" />
           </button>
         ) : (
-          <button onClick={handleSend} disabled={!input.trim()}>
-            →
+          <button onClick={handleSend} disabled={!input.trim() || pendingTool !== null} title={t("ai.send")}>
+            <span className="codicon codicon-send" />
           </button>
         )}
       </div>

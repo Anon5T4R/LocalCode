@@ -3,6 +3,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { RepoEntry } from "../types";
 import { setToken, getToken, removeToken, listRepos, createRepo, createPullRequest, cloneRepo, deviceLogin, pollToken } from "../lib/github";
 import { loadSettings } from "../lib/settings";
+import { toast } from "../lib/toast";
+import { t } from "../lib/i18n";
 
 interface GitHubPanelProps {
   repoPath: string | null;
@@ -13,7 +15,6 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
   const [savedToken, setSavedToken] = useState<string | null>(null);
   const [repos, setRepos] = useState<RepoEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"auth" | "repos" | "pr">("auth");
 
   // Device flow state
@@ -59,7 +60,7 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     const settings = loadSettings();
     const clientId = settings.githubClientId;
     if (!clientId) {
-      setMessage("Configure um GitHub Client ID nas Configurações (⚙️).");
+      toast.error(t("github.configureClientId"));
       return;
     }
     setLoading(true);
@@ -68,13 +69,12 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
       setDeviceCode(resp.device_code);
       setUserCode(resp.user_code);
       setDeviceUrl(resp.verification_uri);
-      setMessage(`Código: ${resp.user_code} — Abrindo navegador...`);
       openUrl(resp.verification_uri);
       // Start polling
       setPolling(true);
       pollRef.current = true;
     } catch (e: any) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.loginFailed", { error: String(e) }));
     }
     setLoading(false);
   }, []);
@@ -89,14 +89,14 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     const doPoll = async () => {
       while (pollRef.current && !cancelled) {
         try {
-          const t = await pollToken(deviceCode, clientId);
+          const newToken = await pollToken(deviceCode, clientId);
           if (!pollRef.current || cancelled) return;
           // Success!
-          await setToken(t);
-          setSavedToken(t);
+          await setToken(newToken);
+          setSavedToken(newToken);
           setLocalToken("****");
           setPolling(false);
-          setMessage("Login realizado!");
+          toast.success(t("github.loginDone"));
           setTab("repos");
           return;
         } catch (e: any) {
@@ -107,7 +107,7 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
           }
           if (e !== "pending") {
             setPolling(false);
-            setMessage(`Erro: ${e}`);
+            toast.error(t("github.authFailed", { error: String(e) }));
             return;
           }
           // pending - wait and retry
@@ -124,7 +124,6 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     setPolling(false);
     setDeviceCode("");
     setUserCode("");
-    setMessage("");
   }, []);
 
   const handleSaveToken = useCallback(async () => {
@@ -132,10 +131,10 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     try {
       await setToken(token.trim());
       setSavedToken(token.trim());
-      setMessage("Token salvo!");
+      toast.success(t("github.tokenSaved"));
       setTab("repos");
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.tokenSaveFailed", { error: String(e) }));
     }
   }, [token, savedToken]);
 
@@ -147,10 +146,10 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
       setRepos([]);
       setPolling(false);
       pollRef.current = false;
-      setMessage("Token removido");
+      toast.success(t("github.tokenRemoved"));
       setTab("auth");
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.tokenRemoveFailed", { error: String(e) }));
     }
   }, []);
 
@@ -161,7 +160,7 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
       const r = await listRepos(savedToken);
       setRepos(r);
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.listFailed", { error: String(e) }));
     }
     setLoading(false);
   }, [savedToken]);
@@ -171,12 +170,12 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     setLoading(true);
     try {
       await createRepo(savedToken, newRepoName.trim(), newRepoPrivate, newRepoDesc.trim());
-      setMessage(`Repositório "${newRepoName}" criado!`);
+      toast.success(t("github.repoCreated", { name: newRepoName }));
       setNewRepoName("");
       setNewRepoDesc("");
       handleListRepos();
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.repoCreateFailed", { error: String(e) }));
     }
     setLoading(false);
   }, [savedToken, newRepoName, newRepoPrivate, newRepoDesc, handleListRepos]);
@@ -186,11 +185,11 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     setLoading(true);
     try {
       const result = await createPullRequest(savedToken, prOwner, prRepo, prTitle, prBody, prHead, prBase);
-      setMessage(`PR #${result.number} criado! ${result.url}`);
+      toast.success(t("github.prCreated", { number: result.number, url: result.url }));
       setPrTitle("");
       setPrBody("");
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.prCreateFailed", { error: String(e) }));
     }
     setLoading(false);
   }, [savedToken, prOwner, prRepo, prTitle, prBody, prHead, prBase]);
@@ -201,10 +200,10 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
     try {
       const dest = repoPath.replace(/\\/g, "/") + "/" + cloneUrl.split("/").pop()?.replace(".git", "");
       await cloneRepo(cloneUrl.trim(), dest);
-      setMessage(`Clonado para ${dest}`);
+      toast.success(t("github.cloned", { dest }));
       setCloneUrl("");
     } catch (e) {
-      setMessage(`Erro: ${e}`);
+      toast.error(t("github.cloneFailed", { error: String(e) }));
     }
     setLoading(false);
   }, [cloneUrl, repoPath]);
@@ -215,8 +214,8 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
         <span>GitHub</span>
         {savedToken && (
           <div className="github-header-actions">
-            <button className="github-action-btn" onClick={handleRemoveToken} title="Remover token">
-              ✕
+            <button className="github-action-btn" onClick={handleRemoveToken} title={t("github.removeToken")}>
+              <span className="codicon codicon-sign-out" />
             </button>
           </div>
         )}
@@ -250,47 +249,47 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
           {polling ? (
             <div className="github-device-flow">
               <p className="github-device-step">
-                <strong>Passo 1:</strong> Clique no botao abaixo para abrir o navegador
+                <strong>{t("github.step1")}</strong> {t("github.step1Text")}
               </p>
               <button className="github-open-browser-btn" onClick={() => openUrl(deviceUrl)}>
-                Abrir Navegador
+                {t("github.openBrowser")}
               </button>
               <p className="github-device-step">
-                Ou acesse manualmente: <span className="github-link" onClick={() => openUrl(deviceUrl)}>{deviceUrl}</span>
+                {t("github.orManually")} <span className="github-link" onClick={() => openUrl(deviceUrl)}>{deviceUrl}</span>
               </p>
 
               <p className="github-device-step">
-                <strong>Passo 2:</strong> Copie o codigo abaixo e cole no site do GitHub
+                <strong>{t("github.step2")}</strong> {t("github.step2Text")}
               </p>
               <div>
-                <span className="github-user-code" onClick={() => navigator.clipboard.writeText(userCode)} title="Clique para copiar">{userCode}</span>
+                <span className="github-user-code" onClick={() => navigator.clipboard.writeText(userCode)} title={t("github.clickToCopy")}>{userCode}</span>
                 <button className="github-copy-code-btn" onClick={() => navigator.clipboard.writeText(userCode)}>
-                  Copiar
+                  {t("github.copy")}
                 </button>
               </div>
 
               <p className="github-device-step">
-                <strong>Passo 3:</strong> Autorize o aplicativo no GitHub
+                <strong>{t("github.step3")}</strong> {t("github.step3Text")}
               </p>
               <p className="github-device-step">
                 <span className="github-polling-indicator"></span>
-                Aguardando autorizacao...
+                {t("github.waiting")}
               </p>
               <button className="github-cancel-btn" onClick={handleCancelPoll}>
-                Cancelar
+                {t("common.cancel")}
               </button>
             </div>
           ) : (
             <>
               <p className="github-info">
-                Faça login no GitHub pelo navegador
+                {t("github.loginInfo")}
               </p>
               <button className="github-btn" onClick={handleDeviceLogin} disabled={loading}>
-                Login com GitHub
+                {t("github.loginBtn")}
               </button>
               <hr className="github-divider" />
               <p className="github-info">
-                Ou cole manualmente um Personal Access Token
+                {t("github.patInfo")}
               </p>
               <input
                 className="github-input"
@@ -300,7 +299,7 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
                 onChange={(e) => setLocalToken(e.target.value)}
               />
               <button className="github-btn" onClick={handleSaveToken} disabled={!token.trim() || savedToken !== null}>
-                Salvar Token
+                {t("github.saveToken")}
               </button>
             </>
           )}
@@ -310,7 +309,7 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
       {tab === "repos" && (
         <div className="github-repos">
           <div className="github-section">
-            <div className="github-section-title">Clonar repositório</div>
+            <div className="github-section-title">{t("github.cloneSection")}</div>
             <input
               className="github-input"
               placeholder="https://github.com/user/repo.git"
@@ -322,21 +321,21 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
               onClick={handleClone}
               disabled={!cloneUrl.trim() || !repoPath}
             >
-              Clonar
+              {t("github.clone")}
             </button>
           </div>
 
           <div className="github-section">
-            <div className="github-section-title">Criar repositório</div>
+            <div className="github-section-title">{t("github.createSection")}</div>
             <input
               className="github-input"
-              placeholder="Nome do repositório"
+              placeholder={t("github.repoName")}
               value={newRepoName}
               onChange={(e) => setNewRepoName(e.target.value)}
             />
             <input
               className="github-input"
-              placeholder="Descrição (opcional)"
+              placeholder={t("github.repoDesc")}
               value={newRepoDesc}
               onChange={(e) => setNewRepoDesc(e.target.value)}
             />
@@ -346,25 +345,28 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
                 checked={newRepoPrivate}
                 onChange={(e) => setNewRepoPrivate(e.target.checked)}
               />
-              Privado
+              {t("github.private")}
             </label>
             <button
               className="github-btn"
               onClick={handleCreateRepo}
               disabled={!newRepoName.trim() || loading}
             >
-              Criar
+              {t("github.create")}
             </button>
           </div>
 
           <div className="github-section">
-            <div className="github-section-title">Meus repositórios</div>
+            <div className="github-section-title">{t("github.myRepos")}</div>
             <button className="github-btn" onClick={handleListRepos} disabled={loading}>
-              {loading ? "Carregando..." : "Atualizar"}
+              {loading ? t("common.loading") : t("common.refresh")}
             </button>
             {repos.map((r) => (
               <div key={r.full_name} className="github-repo-item">
-                <span className="github-repo-icon">{r.private ? "🔒" : "🔓"}</span>
+                <span
+                  className={`github-repo-icon codicon ${r.private ? "codicon-lock" : "codicon-repo"}`}
+                  title={r.private ? t("github.private") : t("github.public")}
+                />
                 <div className="github-repo-info">
                   <span className="github-repo-name">{r.full_name}</span>
                   {r.description && <span className="github-repo-desc">{r.description}</span>}
@@ -379,38 +381,38 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
         <div className="github-pr">
           <input
             className="github-input"
-            placeholder="Owner (ex: usuario)"
+            placeholder={t("github.prOwner")}
             value={prOwner}
             onChange={(e) => setPrOwner(e.target.value)}
           />
           <input
             className="github-input"
-            placeholder="Repo (ex: meu-repo)"
+            placeholder={t("github.prRepo")}
             value={prRepo}
             onChange={(e) => setPrRepo(e.target.value)}
           />
           <input
             className="github-input"
-            placeholder="Título do PR"
+            placeholder={t("github.prTitle")}
             value={prTitle}
             onChange={(e) => setPrTitle(e.target.value)}
           />
           <textarea
             className="github-input github-textarea"
-            placeholder="Descrição do PR (opcional)"
+            placeholder={t("github.prBody")}
             value={prBody}
             onChange={(e) => setPrBody(e.target.value)}
             rows={3}
           />
           <input
             className="github-input"
-            placeholder="Branch de origem (head)"
+            placeholder={t("github.prHead")}
             value={prHead}
             onChange={(e) => setPrHead(e.target.value)}
           />
           <input
             className="github-input"
-            placeholder="Branch de destino (base) — default: main"
+            placeholder={t("github.prBase")}
             value={prBase}
             onChange={(e) => setPrBase(e.target.value)}
           />
@@ -419,12 +421,10 @@ export const GitHubPanel = memo(function GitHubPanel({ repoPath }: GitHubPanelPr
             onClick={handleCreatePR}
             disabled={!prOwner || !prRepo || !prTitle || !prHead || loading}
           >
-            Criar PR
+            {t("github.createPr")}
           </button>
         </div>
       )}
-
-      {message && <div className="github-message">{message}</div>}
     </div>
   );
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, memo } from "react";
 import { getDocumentSymbols, getLspLanguage } from "../lib/lsp";
 import type { LspSymbol } from "../lib/lsp";
+import { t } from "../lib/i18n";
 
 interface OutlinePanelProps {
   language: string | null;
@@ -46,12 +47,12 @@ export const OutlinePanel = memo(function OutlinePanel({ language, filePath, onS
   return (
     <div className="outline-panel">
       <div className="outline-header">
-        <span className="outline-title">Estrutura</span>
+        <span className="outline-title">{t("outline.title")}</span>
         {loading && <span className="outline-loading">⋯</span>}
       </div>
       <div className="outline-body">
         {symbols.length === 0 && !loading && (
-          <div className="outline-empty">Nenhum símbolo</div>
+          <div className="outline-empty">{t("outline.noSymbols")}</div>
         )}
         {renderSymbols(symbols, 0)}
       </div>

@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect, useState, memo } from "react";
 import Editor, { OnMount, OnChange } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import "../lib/monaco-setup";
+import { t } from "../lib/i18n";
 import {
   getCompletion,
   getHover,
@@ -412,7 +413,7 @@ export const MonacoWrapper = memo(function MonacoWrapper({
         range: new monaco.Range(line, 1, line, 1),
         options: {
           glyphMarginClassName: "dbg-breakpoint-glyph",
-          glyphMarginHoverMessage: { value: "Ponto de parada — clique para remover" },
+          glyphMarginHoverMessage: { value: t("debug.bpHover") },
           stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
         },
       }))

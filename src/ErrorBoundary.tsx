@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { t } from "./lib/i18n";
 
 interface Props {
   children: ReactNode;
@@ -24,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
           height: "100vh", background: "#1e1e1e", color: "#ccc", fontFamily: "sans-serif",
           padding: 40, textAlign: "center",
         }}>
-          <h2 style={{ color: "#f14c4c", marginBottom: 12 }}>Erro inesperado</h2>
+          <h2 style={{ color: "#f14c4c", marginBottom: 12 }}>{t("eb.title")}</h2>
           <pre style={{
             background: "#2d2d2d", padding: 16, borderRadius: 6, fontSize: 12,
             maxWidth: "80%", overflow: "auto", color: "#ce9178", fontFamily: "monospace",
@@ -38,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
               padding: "8px 24px", borderRadius: 4, cursor: "pointer", fontSize: 13,
             }}
           >
-            Reiniciar
+            {t("eb.restart")}
           </button>
         </div>
       );
