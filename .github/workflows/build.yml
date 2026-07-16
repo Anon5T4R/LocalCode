@@ -23,16 +23,20 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo.lock em dia (--locked)
+        working-directory: src-tauri
+        run: cargo fetch --locked
 
       - name: Install npm LSP packages (offline)
         shell: pwsh
         run: |
           cd src-tauri\lsp-packages
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
 
       - name: Setup Go (for gopls)
         uses: actions/setup-go@v6
@@ -153,10 +157,14 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo.lock em dia (--locked)
+        working-directory: src-tauri
+        run: cargo fetch --locked
 
       - name: Install Linux build dependencies
         run: |
@@ -176,7 +184,7 @@ jobs:
       - name: Install npm LSP packages (offline)
         run: |
           cd src-tauri/lsp-packages
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
 
       - name: Setup Go (for gopls)
         uses: actions/setup-go@v6
