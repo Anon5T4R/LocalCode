@@ -35,7 +35,7 @@ jobs:
           npm install --ignore-scripts
 
       - name: Setup Go (for gopls)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
 
@@ -179,7 +179,7 @@ jobs:
           npm install --ignore-scripts
 
       - name: Setup Go (for gopls)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
 
