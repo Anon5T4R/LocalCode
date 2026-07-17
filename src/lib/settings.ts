@@ -8,7 +8,15 @@ export interface Settings {
   ctx: number;
   locale: Locale;
   githubClientId: string;
-  theme: "dark" | "light" | "high-contrast";
+  theme:
+    | "dark"
+    | "light"
+    | "high-contrast"
+    | "nature"
+    | "darkblue"
+    | "calmgreen"
+    | "pastelpink"
+    | "punkprincess";
 }
 
 const DEFAULTS: Settings = {

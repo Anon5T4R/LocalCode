@@ -231,7 +231,8 @@ function TerminalInstance({ active, workspaceRoot, adoptSessionId, onExit }: Ter
 
 function xtermTheme(): ITheme {
   const t = document.documentElement.getAttribute("data-theme");
-  if (t === "light") {
+  // Named themes: the light ones ride the light palette, the dark ones the dark default
+  if (t === "light" || t === "nature" || t === "calmgreen" || t === "pastelpink") {
     return {
       background: "#ffffff", foreground: "#1e1e1e", cursor: "#1e1e1e",
       selectionBackground: "#add6ff",

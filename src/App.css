@@ -83,6 +83,131 @@
   --scrollbar-hover: #9fd8ef;
 }
 
+/* ---- Nature (light) ---- */
+[data-theme="nature"] {
+  --bg-primary: #f5f7f2;
+  --bg-secondary: #eef1ea;
+  --bg-tertiary: #eef2ea;
+  --bg-hover: #e6efe1;
+  --bg-active: #d6e3cf;
+  --bg-input: #ffffff;
+  --border: #e2e8dd;
+  --text-primary: #2e3a2e;
+  --text-secondary: #6f7d6f;
+  --text-muted: #8d998d;
+  --accent: #7a9e7e;
+  --accent-hover: #e8b4c8;
+  --danger: #c0492f;
+  --success: #5a8f5e;
+  --warning: #c98a2e;
+  --diff-add: #5a8f5e;
+  --diff-del: #c0492f;
+  --diff-hunk: #e8b4c8;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #c9d4c2;
+  --scrollbar-hover: #b0bfa8;
+}
+
+/* ---- Dark blue (dark) ---- */
+[data-theme="darkblue"] {
+  --bg-primary: #0d1520;
+  --bg-secondary: #0a1019;
+  --bg-tertiary: #1a2942;
+  --bg-hover: #1e3a5f;
+  --bg-active: #27496f;
+  --bg-input: #131f30;
+  --border: #223049;
+  --text-primary: #e2e8f0;
+  --text-secondary: #8595ad;
+  --text-muted: #66748c;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --danger: #f87171;
+  --success: #4ade80;
+  --warning: #d9a441;
+  --diff-add: #4ade80;
+  --diff-del: #f87171;
+  --diff-hunk: #60a5fa;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #2c4166;
+  --scrollbar-hover: #3d5680;
+}
+
+/* ---- Calm green (light) ---- */
+[data-theme="calmgreen"] {
+  --bg-primary: #f2f5f1;
+  --bg-secondary: #eaf0e8;
+  --bg-tertiary: #e9efe7;
+  --bg-hover: #dcebd9;
+  --bg-active: #cbe0c6;
+  --bg-input: #ffffff;
+  --border: #dde6dc;
+  --text-primary: #24302a;
+  --text-secondary: #6a7a6f;
+  --text-muted: #8a998e;
+  --accent: #4f7d5e;
+  --accent-hover: #6fa07e;
+  --danger: #c0492f;
+  --success: #4f7d5e;
+  --warning: #c98a2e;
+  --diff-add: #4f7d5e;
+  --diff-del: #c0492f;
+  --diff-hunk: #6fa07e;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #c5d3c2;
+  --scrollbar-hover: #aabfa7;
+}
+
+/* ---- Pastel pink (light) ---- */
+[data-theme="pastelpink"] {
+  --bg-primary: #fdf4f7;
+  --bg-secondary: #f7ebf1;
+  --bg-tertiary: #f9eaf0;
+  --bg-hover: #fbe4ee;
+  --bg-active: #f5d3e2;
+  --bg-input: #ffffff;
+  --border: #f2dfe7;
+  --text-primary: #3a2a30;
+  --text-secondary: #8a7580;
+  --text-muted: #a89099;
+  --accent: #e8799f;
+  --accent-hover: #f4a9c4;
+  --danger: #d84a6b;
+  --success: #4f9d76;
+  --warning: #d99a3e;
+  --diff-add: #4f9d76;
+  --diff-del: #d84a6b;
+  --diff-hunk: #f4a9c4;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #eecad9;
+  --scrollbar-hover: #e2adc3;
+}
+
+/* ---- PunkPrincess (dark) ---- */
+[data-theme="punkprincess"] {
+  --bg-primary: #120a1a;
+  --bg-secondary: #0c0512;
+  --bg-tertiary: #241533;
+  --bg-hover: #33143a;
+  --bg-active: #451c4e;
+  --bg-input: #1a0f26;
+  --border: #2c1c3d;
+  --text-primary: #f0e6ff;
+  --text-secondary: #9a86b5;
+  --text-muted: #7a6890;
+  --accent: #ff2d95;
+  --accent-hover: #2de2ff;
+  --danger: #ff5470;
+  --success: #43e8a0;
+  --warning: #ffb454;
+  --diff-add: #43e8a0;
+  --diff-del: #ff5470;
+  --diff-hunk: #2de2ff;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #3d2652;
+  --scrollbar-hover: #56356f;
+}
+
 * {
   margin: 0;
   padding: 0;

@@ -67,6 +67,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <option value="dark">{t("settings.themeDark")}</option>
           <option value="light">{t("settings.themeLight")}</option>
           <option value="high-contrast">{t("settings.themeHc")}</option>
+          <option value="nature">{t("settings.themeNature")}</option>
+          <option value="darkblue">{t("settings.themeDarkBlue")}</option>
+          <option value="calmgreen">{t("settings.themeCalmGreen")}</option>
+          <option value="pastelpink">{t("settings.themePastelPink")}</option>
+          <option value="punkprincess">{t("settings.themePunkPrincess")}</option>
         </select>
 
         <label className="settings-label">{t("settings.language")}</label>

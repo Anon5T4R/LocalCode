@@ -535,7 +535,8 @@ export const MonacoWrapper = memo(function MonacoWrapper({
 
 function themeFromAttr(): string {
   const t = document.documentElement.getAttribute("data-theme");
-  if (t === "light") return "vs";
+  // Named themes: the light ones ride the light editor, the dark ones the dark editor
+  if (t === "light" || t === "nature" || t === "calmgreen" || t === "pastelpink") return "vs";
   if (t === "high-contrast") return "hc-black";
   return "vs-dark";
 }
