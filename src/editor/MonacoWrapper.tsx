@@ -68,7 +68,19 @@ export const MonacoWrapper = memo(function MonacoWrapper({
 
   // Keep the editor theme in sync with the app theme (data-theme attribute)
   useEffect(() => {
-    const update = () => setMonacoTheme(themeFromAttr());
+    const update = () => {
+      const next = themeFromAttr();
+      const monaco = monacoRef.current;
+      if (monaco) {
+        // Redefine antes de trocar: o fundo do editor sai de uma var CSS, que só
+        // tem o valor novo depois do data-theme mudar. O setTheme explícito é
+        // necessário porque temas diferentes podem cair no mesmo nome (nature ->
+        // calmgreen são ambos "local-vs") e aí o React não re-renderiza.
+        defineEditorThemes(monaco);
+        monaco.editor.setTheme(next);
+      }
+      setMonacoTheme(next);
+    };
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -505,6 +517,7 @@ export const MonacoWrapper = memo(function MonacoWrapper({
       keepCurrentModel
       onChange={handleChange}
       onMount={handleMount}
+      beforeMount={defineEditorThemes}
       theme={monacoTheme}
       options={{
         glyphMargin: true,
@@ -536,9 +549,45 @@ export const MonacoWrapper = memo(function MonacoWrapper({
 function themeFromAttr(): string {
   const t = document.documentElement.getAttribute("data-theme");
   // Named themes: the light ones ride the light editor, the dark ones the dark editor
-  if (t === "light" || t === "nature" || t === "calmgreen" || t === "pastelpink") return "vs";
+  if (t === "light" || t === "nature" || t === "calmgreen" || t === "pastelpink") return "local-vs";
+  // O hc-black fica no tema embutido de propósito: contraste máximo é a
+  // identidade do tema de acessibilidade, não um fundão a suavizar.
   if (t === "high-contrast") return "hc-black";
-  return "vs-dark";
+  return "local-vs-dark";
+}
+
+/** Lê uma var CSS do <html> — é lá que as paletas dos temas moram (App.css). */
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/**
+ * O Monaco carrega o fundo embutido em cada tema ("vs" = #ffffff PURO, "vs-dark"
+ * = #1e1e1e): é cor própria, definida em JS, que não enxerga as var do CSS. Como
+ * o editor ocupa a maior área da tela, esse #ffffff é justamente o "fundão
+ * branco brilhante" que a pass de suavização existe pra matar — e ele
+ * sobreviveria a qualquer mexida no App.css.
+ *
+ * Então derivamos os temas do app a partir dos embutidos (base + inherit),
+ * trocando SÓ a cor de superfície pelo --bg-primary do tema ativo. `rules: []`
+ * mantém as cores de sintaxe do vs/vs-dark intactas — o editor continua seguindo
+ * o par claro/escuro (decisão anterior da suíte), só que agora o palco dele pega
+ * o matiz da paleta em vez de destoar em branco puro.
+ */
+function defineEditorThemes(monaco: typeof import("monaco-editor")): void {
+  const pairs = [
+    ["local-vs", "vs", "#f9f9f9"],
+    ["local-vs-dark", "vs-dark", "#1e1e1e"],
+  ] as const;
+  for (const [name, base, fallback] of pairs) {
+    monaco.editor.defineTheme(name, {
+      base,
+      inherit: true,
+      rules: [],
+      colors: { "editor.background": cssVar("--bg-primary", fallback) },
+    });
+  }
 }
 
 function mapLspKindToMonaco(

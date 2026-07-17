@@ -2,6 +2,29 @@
    LocalCode – VS Code-inspired dark theme
    ============================================================ */
 
+/* Pass de suavização (§2): este bloco NÃO foi alterado de propósito.
+   A regra é "escuro quase-preto (L* < ~12) sobe ~5 L*", mas #1e1e1e já está em
+   L*11.3 — dentro da faixa onde os próprios temas escuros da spec aterrissam
+   depois de suavizados (punkprincess L*7.5, darkblue L*12.0). Subir +5 jogaria
+   a base escura pra L*16.3, mais clara que TODO tema escuro da suíte, e ainda
+   sacrificaria o cinza-assinatura do VS Code sem resolver queixa nenhuma:
+   #1e1e1e não é o "preto muito escuro" que rouba o foco do accent. */
+/* Contraste do texto secundário (correção WCAG, 2026-07-17, logo após a suavização).
+   O `--text-secondary` reprovava no AA (< 4.5:1) em TODOS os temas claros. Em nature
+   e pastelpink isso é dívida pré-existente — já reprovava antes da suavização; a
+   pass só deixou visível. Escurecemos mexendo apenas no L* (Lab), com a/b intactos:
+   o matiz de cada tema fica igual, só a luminância cai o mínimo pra bater 4.5:1.
+   Temas escuros (incl. o :root e o high-contrast) não foram tocados — já passavam.
+
+   ATENÇÃO à superfície de medida: aqui o secundário NÃO vive sobre o `--bg-input`
+   (o off-white); ele vive na sidebar/editor, ou seja sobre o `--bg-primary`, que é
+   bem mais escuro. Por isso os hexes deste app são mais escuros que os do resto da
+   suíte no mesmo tema (ex.: nature #637163 aqui vs. #697669 nos apps de painel
+   claro) — mesma regra, superfície diferente.
+
+   `--text-muted` é decorativo (placeholder/apoio): não forçamos 4.5 nele, só o
+   tiramos do ilegível (< 3:1) — de propósito ele continua fraco. */
+
 :root {
   --bg-primary: #1e1e1e;
   --bg-secondary: #252526;
@@ -34,17 +57,22 @@
 }
 
 /* ---- Light theme ---- */
+/* Suavização de fundos (§2): o fundão desce ~3 L* e o input deixa de ser #ffffff
+   puro — branco puro tem contraste máximo contra tudo e rouba o foco do accent.
+   A base do LocalCode é cinza neutro (sem matiz), então o off-white sai neutro.
+   A escada existente (primary > secondary > tertiary > border) foi preservada:
+   todos os degraus desceram os mesmos ~3 L*, só o input subiu p/ ~L*98. */
 [data-theme="light"] {
-  --bg-primary: #f3f3f3;
-  --bg-secondary: #e8e8e8;
-  --bg-tertiary: #dcdcdc;
-  --bg-hover: #e0e0e0;
-  --bg-active: #d0d0d0;
-  --bg-input: #ffffff;
-  --border: #cccccc;
+  --bg-primary: #eaeaea;
+  --bg-secondary: #dfdfdf;
+  --bg-tertiary: #d4d4d4;
+  --bg-hover: #d8d8d8;
+  --bg-active: #c8c8c8;
+  --bg-input: #f9f9f9;
+  --border: #c4c4c4;
   --text-primary: #1e1e1e;
   --text-secondary: #555555;
-  --text-muted: #888888;
+  --text-muted: #868686;
   --accent: #0065bd;
   --accent-hover: #005aa8;
   --danger: #c5201d;
@@ -59,6 +87,10 @@
 }
 
 /* ---- High contrast theme ---- */
+/* Pass de suavização (§2): este bloco NÃO foi alterado de propósito. Suavizar o
+   #000000 aqui destruiria a razão de existir do tema — contraste máximo é a
+   identidade dele, não um descuido. A queixa do fundão é sobre os temas
+   pastéis/leves perderem o accent; não se aplica a um tema de acessibilidade. */
 [data-theme="high-contrast"] {
   --bg-primary: #000000;
   --bg-secondary: #0a0a0a;
@@ -84,17 +116,22 @@
 }
 
 /* ---- Nature (light) ---- */
+/* Suavização (§1). Mapa papel->cor desta paleta (o LocalCode usa nomenclatura
+   própria): --bg-primary = o --bg da spec | --bg-input = o --panel (era #ffffff:
+   branco puro não sobrevive a esta pass) | --bg-tertiary = o --panel-2 |
+   --border = o --border. --bg-secondary/-hover/-active não têm par na spec:
+   deslocaram os mesmos -2.2 L* que o --bg, preservando matiz e escada. */
 [data-theme="nature"] {
-  --bg-primary: #f5f7f2;
-  --bg-secondary: #eef1ea;
-  --bg-tertiary: #eef2ea;
-  --bg-hover: #e6efe1;
-  --bg-active: #d6e3cf;
-  --bg-input: #ffffff;
-  --border: #e2e8dd;
+  --bg-primary: #eef1e9;
+  --bg-secondary: #e8ebe4;
+  --bg-tertiary: #e4eade;
+  --bg-hover: #e0e9db;
+  --bg-active: #d0ddc9;
+  --bg-input: #f8faf5;
+  --border: #dbe3d4;
   --text-primary: #2e3a2e;
-  --text-secondary: #6f7d6f;
-  --text-muted: #8d998d;
+  --text-secondary: #637163;
+  --text-muted: #828d82;
   --accent: #7a9e7e;
   --accent-hover: #e8b4c8;
   --danger: #c0492f;
@@ -109,14 +146,16 @@
 }
 
 /* ---- Dark blue (dark) ---- */
+/* Suavização (§1): mesmo mapa do nature. O quase-preto subiu +5.4 L*; os extras
+   (--bg-secondary/-hover/-active) subiram o mesmo tanto p/ manter a escada. */
 [data-theme="darkblue"] {
-  --bg-primary: #0d1520;
-  --bg-secondary: #0a1019;
-  --bg-tertiary: #1a2942;
-  --bg-hover: #1e3a5f;
-  --bg-active: #27496f;
-  --bg-input: #131f30;
-  --border: #223049;
+  --bg-primary: #16202e;
+  --bg-secondary: #171c24;
+  --bg-tertiary: #26374e;
+  --bg-hover: #2c466c;
+  --bg-active: #35567d;
+  --bg-input: #1d2a3c;
+  --border: #2d3f59;
   --text-primary: #e2e8f0;
   --text-secondary: #8595ad;
   --text-muted: #66748c;
@@ -134,17 +173,18 @@
 }
 
 /* ---- Calm green (light) ---- */
+/* Suavização (§1): mesmo mapa do nature; extras deslocados -2.0 L*. */
 [data-theme="calmgreen"] {
-  --bg-primary: #f2f5f1;
-  --bg-secondary: #eaf0e8;
-  --bg-tertiary: #e9efe7;
-  --bg-hover: #dcebd9;
-  --bg-active: #cbe0c6;
-  --bg-input: #ffffff;
-  --border: #dde6dc;
+  --bg-primary: #eaf0e9;
+  --bg-secondary: #e4eae2;
+  --bg-tertiary: #dfe8dd;
+  --bg-hover: #d6e5d3;
+  --bg-active: #c5dac0;
+  --bg-input: #f7faf6;
+  --border: #d5e0d3;
   --text-primary: #24302a;
-  --text-secondary: #6a7a6f;
-  --text-muted: #8a998e;
+  --text-secondary: #617066;
+  --text-muted: #7f8d83;
   --accent: #4f7d5e;
   --accent-hover: #6fa07e;
   --danger: #c0492f;
@@ -159,17 +199,18 @@
 }
 
 /* ---- Pastel pink (light) ---- */
+/* Suavização (§1): mesmo mapa do nature; extras deslocados -2.8 L*. */
 [data-theme="pastelpink"] {
-  --bg-primary: #fdf4f7;
-  --bg-secondary: #f7ebf1;
-  --bg-tertiary: #f9eaf0;
-  --bg-hover: #fbe4ee;
-  --bg-active: #f5d3e2;
-  --bg-input: #ffffff;
-  --border: #f2dfe7;
+  --bg-primary: #f8ebf0;
+  --bg-secondary: #efe3e9;
+  --bg-tertiary: #f2dde6;
+  --bg-hover: #f3dce6;
+  --bg-active: #edcbda;
+  --bg-input: #fdf6f9;
+  --border: #ecd3de;
   --text-primary: #3a2a30;
-  --text-secondary: #8a7580;
-  --text-muted: #a89099;
+  --text-secondary: #7b6772;
+  --text-muted: #9b838c;
   --accent: #e8799f;
   --accent-hover: #f4a9c4;
   --danger: #d84a6b;
@@ -184,14 +225,20 @@
 }
 
 /* ---- PunkPrincess (dark) ---- */
+/* Suavização (§1): o tema da queixa. O quase-preto #120a1a subiu +3.7 L*, então
+   o rosa #ff2d95 passa a ser o pico de contraste da tela — que é o ponto todo.
+   Extras subiram os mesmos +3.7. NOTA: --bg-secondary (barra/sidebar) segue
+   sendo o degrau MAIS escuro deste tema, ao contrário do :root do próprio app,
+   onde a sidebar é mais clara que o editor. Preservei a escada existente em vez
+   de inverter, mas essa divergência é anterior à pass — vale uma olhada. */
 [data-theme="punkprincess"] {
-  --bg-primary: #120a1a;
-  --bg-secondary: #0c0512;
-  --bg-tertiary: #241533;
-  --bg-hover: #33143a;
-  --bg-active: #451c4e;
-  --bg-input: #1a0f26;
-  --border: #2c1c3d;
+  --bg-primary: #1c1228;
+  --bg-secondary: #16111a;
+  --bg-tertiary: #32204a;
+  --bg-hover: #3c1c42;
+  --bg-active: #4e2457;
+  --bg-input: #251733;
+  --border: #3a2850;
   --text-primary: #f0e6ff;
   --text-secondary: #9a86b5;
   --text-muted: #7a6890;
