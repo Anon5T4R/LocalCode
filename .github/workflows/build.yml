@@ -8,6 +8,60 @@ on:
 permissions:
   contents: write
 
+# ---------------------------------------------------------------------------
+# VERSÕES FIXAS + SHA256 (2026-07-18)
+#
+# O LocalCode embarca SETE ferramentas de terceiros no instalador (LSPs, debug
+# adapters, SDK, runtime de IA). Três delas flutuavam em `latest` — o
+# rust-analyzer, o gopls e o Dart SDK — então cada build embarcava uma versão
+# diferente sem registro de qual, e NENHUMA tinha verificação de integridade.
+#
+# Agora tudo é versão fixa, e todo download direto tem sha256 conferido. As
+# constantes ficam centralizadas aqui: mexer em versão é mexer num lugar só, em
+# vez de caçar URL espalhada pelos dois jobs.
+#
+# Duas exceções deliberadas, e o porquê:
+# - **gopls**: instalado com `go install ...@versão`. Não leva sha256 nosso
+#   porque o toolchain do Go já verifica contra o checksum database público
+#   (sum.golang.org) — garantia mais forte que um hash nosso. Só a versão
+#   precisava sair do `@latest`.
+# - **pip (pylsp/debugpy)**: versões fixadas; o pip resolve as dependências
+#   transitivas, que não dá pra travar por hash sem um requirements completo.
+#
+# O llama fica em b9802 (build CPU) enquanto os outros 8 apps da suíte estão em
+# b10066 (Vulkan) — builds diferentes de propósito: aqui o alvo é CPU. Está
+# fixo, que é o que importa; sincronizar as versões é decisão à parte.
+#
+# PRA ATUALIZAR: trocar a versão abaixo, baixar o artefato, rodar `sha256sum` e
+# trocar o hash ao lado. Versão nova com hash velho = build falha, que é o certo.
+# ---------------------------------------------------------------------------
+env:
+  RA_VERSION: "2026-07-13"
+  RA_SHA_WIN: "d8d79975da21ca59dcb9d19d253b2210f33c3eef41eab24ec48b6d5aaaa4e1ff"
+  RA_SHA_LINUX: "5ee1754afa7a1eb7f56606847b61328e6fac2f316e40ebf314dcefb30263df4d"
+
+  GOPLS_VERSION: "v0.23.0"
+
+  DART_VERSION: "3.12.2"
+  DART_SHA_WIN: "77fd96c823ed09a85e58209a2c5f16b0fc02e5ed4f3e3d46fddf4be763d498d6"
+  DART_SHA_LINUX: "28e47b44cf075f36771046c068bb0d174201cf9c7608744aed1cc23204299c2d"
+
+  JSDEBUG_VERSION: "1.117.0"
+  JSDEBUG_SHA: "ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772"
+
+  CODELLDB_VERSION: "1.12.2"
+  CODELLDB_SHA_WIN: "aa3f45175da3850973632fef1a1af0ed2382866bfd3dcd836544973831388a25"
+  CODELLDB_SHA_LINUX: "b85b45a8570051d535b0927c6c9da11c39f3a056c73559064647faf7f37f637d"
+
+  LLAMA_VERSION: "b9802"
+  LLAMA_SHA_WIN: "d55a7ab5036f305476c97d7b2ead0a9806d5e85b6486dfcf86bda25e40c6e442"
+  LLAMA_SHA_LINUX: "7d5ad336796b835d78ff1b1663af27a91f5ebcdcbc0923aa11878996fb473a15"
+
+  PY_VERSION: "3.12.9"
+  PY_SHA_WIN: "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865"
+  PYLSP_VERSION: "1.14.0"
+  DEBUGPY_VERSION: "1.8.21"
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -47,35 +101,38 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "src-tauri\lsp-packages\bin" -Force
-          $url = "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-pc-windows-msvc.zip"
+          $url = "https://github.com/rust-lang/rust-analyzer/releases/download/$env:RA_VERSION/rust-analyzer-x86_64-pc-windows-msvc.zip"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\rust-analyzer.zip"
+          $h = (Get-FileHash "$env:TEMP\rust-analyzer.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:RA_SHA_WIN) { throw "rust-analyzer: sha256 nao bate. esperado=$env:RA_SHA_WIN recebido=$h" }
           Expand-Archive -Path "$env:TEMP\rust-analyzer.zip" -DestinationPath "src-tauri\lsp-packages\bin" -Force
 
       - name: Install gopls
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "src-tauri\lsp-packages\bin" -Force
-          go install golang.org/x/tools/gopls@latest
+          go install golang.org/x/tools/gopls@$env:GOPLS_VERSION
           Copy-Item "$env:USERPROFILE\go\bin\gopls.exe" "src-tauri\lsp-packages\bin\gopls.exe"
 
       - name: Install pylsp (bundled Python embeddable)
         shell: pwsh
         run: |
-          $pyVer = "3.12.9"
-          $url = "https://www.python.org/ftp/python/$pyVer/python-$pyVer-embed-amd64.zip"
+          $url = "https://www.python.org/ftp/python/$env:PY_VERSION/python-$env:PY_VERSION-embed-amd64.zip"
           $dest = "src-tauri\lsp-packages\python"
           New-Item -ItemType Directory -Path $dest -Force
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\python.zip"
+          $h = (Get-FileHash "$env:TEMP\python.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:PY_SHA_WIN) { throw "python embeddable: sha256 nao bate. esperado=$env:PY_SHA_WIN recebido=$h" }
           Expand-Archive -Path "$env:TEMP\python.zip" -DestinationPath $dest -Force
           # Enable site-packages in ._pth
           $pth = Get-ChildItem $dest -Filter "*._pth" | Select-Object -First 1
           if ($pth) {
             (Get-Content $pth.FullName) -replace '#import site', 'import site' | Set-Content $pth.FullName
           }
-          # Install pip + pylsp
+          # Install pip + pylsp (versões fixas — ver o bloco env no topo)
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$env:TEMP\get-pip.py"
           & "$dest\python.exe" "$env:TEMP\get-pip.py" --no-warn-script-location 2>&1 | Out-Null
-          & "$dest\python.exe" -m pip install python-lsp-server debugpy -q 2>&1 | Out-Null
+          & "$dest\python.exe" -m pip install "python-lsp-server==$env:PYLSP_VERSION" "debugpy==$env:DEBUGPY_VERSION" -q 2>&1 | Out-Null
           # Cleanup pip cache to save space
           & "$dest\python.exe" -m pip cache purge -q 2>&1 | Out-Null
           Remove-Item -Recurse -Force "$dest\Lib\site-packages\pip" -ErrorAction SilentlyContinue
@@ -83,18 +140,20 @@ jobs:
       - name: Download js-debug (debug adapter)
         shell: pwsh
         run: |
-          $ver = "1.117.0"
-          $url = "https://github.com/microsoft/vscode-js-debug/releases/download/v$ver/js-debug-dap-v$ver.tar.gz"
+          $url = "https://github.com/microsoft/vscode-js-debug/releases/download/v$env:JSDEBUG_VERSION/js-debug-dap-v$env:JSDEBUG_VERSION.tar.gz"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\js-debug.tar.gz"
+          $h = (Get-FileHash "$env:TEMP\js-debug.tar.gz" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:JSDEBUG_SHA) { throw "js-debug: sha256 nao bate. esperado=$env:JSDEBUG_SHA recebido=$h" }
           # Extracts as js-debug/src/dapDebugServer.js
           tar -xzf "$env:TEMP\js-debug.tar.gz" -C "src-tauri\lsp-packages"
 
       - name: Download CodeLLDB (debug adapter)
         shell: pwsh
         run: |
-          $ver = "1.12.2"
-          $url = "https://github.com/vadimcn/codelldb/releases/download/v$ver/codelldb-win32-x64.vsix"
+          $url = "https://github.com/vadimcn/codelldb/releases/download/v$env:CODELLDB_VERSION/codelldb-win32-x64.vsix"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\codelldb.zip"
+          $h = (Get-FileHash "$env:TEMP\codelldb.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:CODELLDB_SHA_WIN) { throw "codelldb: sha256 nao bate. esperado=$env:CODELLDB_SHA_WIN recebido=$h" }
           Expand-Archive -Path "$env:TEMP\codelldb.zip" -DestinationPath "$env:TEMP\codelldb" -Force
           New-Item -ItemType Directory -Path "src-tauri\lsp-packages\codelldb" -Force
           Copy-Item -Recurse -Force "$env:TEMP\codelldb\extension\*" "src-tauri\lsp-packages\codelldb\"
@@ -102,15 +161,19 @@ jobs:
       - name: Download Dart SDK
         shell: pwsh
         run: |
-          $url = "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-windows-x64-release.zip"
+          $url = "https://storage.googleapis.com/dart-archive/channels/stable/release/$env:DART_VERSION/sdk/dartsdk-windows-x64-release.zip"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\dart-sdk.zip"
+          $h = (Get-FileHash "$env:TEMP\dart-sdk.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:DART_SHA_WIN) { throw "Dart SDK: sha256 nao bate. esperado=$env:DART_SHA_WIN recebido=$h" }
           Expand-Archive -Path "$env:TEMP\dart-sdk.zip" -DestinationPath "src-tauri\lsp-packages" -Force
 
       - name: Download llama-server
         shell: pwsh
         run: |
-          $url = "https://github.com/ggml-org/llama.cpp/releases/download/b9802/llama-b9802-bin-win-cpu-x64.zip"
+          $url = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_VERSION/llama-$env:LLAMA_VERSION-bin-win-cpu-x64.zip"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\llama.zip"
+          $h = (Get-FileHash "$env:TEMP\llama.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:LLAMA_SHA_WIN) { throw "llama: sha256 nao bate. esperado=$env:LLAMA_SHA_WIN recebido=$h" }
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $a = [System.IO.Compression.ZipFile]::OpenRead("$env:TEMP\llama.zip")
           New-Item -ItemType Directory -Path "src-tauri\binaries\llama" -Force
@@ -191,29 +254,50 @@ jobs:
         with:
           go-version: "stable"
 
+      # Confere o sha256 de um download e aborta o build se não bater.
+      # Escrito uma vez e reusado pelos passos de download abaixo — sem isso,
+      # o mesmo bloco de 8 linhas se repetiria 5 vezes e sairia de sincronia.
+      - name: Helper de verificação sha256
+        run: |
+          cat > "$RUNNER_TEMP/verify.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          FILE="$1"; WANT="$2"; NAME="$3"
+          GOT=$(sha256sum "$FILE" | cut -d' ' -f1)
+          if [ "$GOT" != "$WANT" ]; then
+            echo "$NAME: sha256 nao bate" >&2
+            echo "  esperado: $WANT" >&2
+            echo "  recebido: $GOT" >&2
+            exit 1
+          fi
+          echo "$NAME: sha256 conferido"
+          EOF
+          chmod +x "$RUNNER_TEMP/verify.sh"
+
       - name: Download rust-analyzer (Linux)
         run: |
           mkdir -p src-tauri/lsp-packages/bin
-          wget -qO ra.gz https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz
+          wget -qO ra.gz "https://github.com/rust-lang/rust-analyzer/releases/download/$RA_VERSION/rust-analyzer-x86_64-unknown-linux-gnu.gz"
+          "$RUNNER_TEMP/verify.sh" ra.gz "$RA_SHA_LINUX" "rust-analyzer"
           gunzip -c ra.gz > src-tauri/lsp-packages/bin/rust-analyzer
           chmod +x src-tauri/lsp-packages/bin/rust-analyzer
 
       - name: Install gopls (Linux)
         run: |
-          go install golang.org/x/tools/gopls@latest
+          go install golang.org/x/tools/gopls@$GOPLS_VERSION
           cp "$(go env GOPATH)/bin/gopls" src-tauri/lsp-packages/bin/gopls
           chmod +x src-tauri/lsp-packages/bin/gopls
 
       - name: Download js-debug (debug adapter, Linux)
         run: |
-          VER=1.117.0
-          wget -qO js-debug.tar.gz "https://github.com/microsoft/vscode-js-debug/releases/download/v$VER/js-debug-dap-v$VER.tar.gz"
+          wget -qO js-debug.tar.gz "https://github.com/microsoft/vscode-js-debug/releases/download/v$JSDEBUG_VERSION/js-debug-dap-v$JSDEBUG_VERSION.tar.gz"
+          "$RUNNER_TEMP/verify.sh" js-debug.tar.gz "$JSDEBUG_SHA" "js-debug"
           tar -xzf js-debug.tar.gz -C src-tauri/lsp-packages
 
       - name: Download CodeLLDB (debug adapter, Linux)
         run: |
-          VER=1.12.2
-          wget -qO codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/v$VER/codelldb-linux-x64.vsix"
+          wget -qO codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/v$CODELLDB_VERSION/codelldb-linux-x64.vsix"
+          "$RUNNER_TEMP/verify.sh" codelldb.vsix "$CODELLDB_SHA_LINUX" "codelldb"
           mkdir -p codelldb-extract src-tauri/lsp-packages/codelldb
           unzip -q codelldb.vsix -d codelldb-extract
           cp -a codelldb-extract/extension/. src-tauri/lsp-packages/codelldb/
@@ -222,13 +306,15 @@ jobs:
 
       - name: Download Dart SDK (Linux)
         run: |
-          wget -qO dart.zip https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-linux-x64-release.zip
+          wget -qO dart.zip "https://storage.googleapis.com/dart-archive/channels/stable/release/$DART_VERSION/sdk/dartsdk-linux-x64-release.zip"
+          "$RUNNER_TEMP/verify.sh" dart.zip "$DART_SHA_LINUX" "Dart SDK"
           unzip -q dart.zip -d src-tauri/lsp-packages
           chmod +x src-tauri/lsp-packages/dart-sdk/bin/dart || true
 
       - name: Download llama-server (Linux)
         run: |
-          wget -qO llama.tar.gz https://github.com/ggml-org/llama.cpp/releases/download/b9802/llama-b9802-bin-ubuntu-x64.tar.gz
+          wget -qO llama.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_VERSION/llama-$LLAMA_VERSION-bin-ubuntu-x64.tar.gz"
+          "$RUNNER_TEMP/verify.sh" llama.tar.gz "$LLAMA_SHA_LINUX" "llama"
           mkdir -p src-tauri/binaries/llama llama-extract
           tar -xzf llama.tar.gz -C llama-extract
           # Copy everything preserving symlinks (cp -a) so the SONAME chains
