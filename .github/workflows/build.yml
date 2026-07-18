@@ -170,7 +170,7 @@ jobs:
       - name: Download llama-server
         shell: pwsh
         run: |
-          $url = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_VERSION/llama-$env:LLAMA_VERSION-bin-win-cpu-x64.zip"
+          $url = "https://github.com/Anon5T4R/Local-runtimes/releases/download/v1/llama-$env:LLAMA_VERSION-bin-win-cpu-x64.zip"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\llama.zip"
           $h = (Get-FileHash "$env:TEMP\llama.zip" -Algorithm SHA256).Hash.ToLower()
           if ($h -ne $env:LLAMA_SHA_WIN) { throw "llama: sha256 nao bate. esperado=$env:LLAMA_SHA_WIN recebido=$h" }
@@ -313,7 +313,7 @@ jobs:
 
       - name: Download llama-server (Linux)
         run: |
-          wget -qO llama.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_VERSION/llama-$LLAMA_VERSION-bin-ubuntu-x64.tar.gz"
+          wget -qO llama.tar.gz "https://github.com/Anon5T4R/Local-runtimes/releases/download/v1/llama-$LLAMA_VERSION-bin-ubuntu-x64.tar.gz"
           "$RUNNER_TEMP/verify.sh" llama.tar.gz "$LLAMA_SHA_LINUX" "llama"
           mkdir -p src-tauri/binaries/llama llama-extract
           tar -xzf llama.tar.gz -C llama-extract
