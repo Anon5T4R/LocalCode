@@ -28,9 +28,10 @@ permissions:
 # - **pip (pylsp/debugpy)**: versões fixadas; o pip resolve as dependências
 #   transitivas, que não dá pra travar por hash sem um requirements completo.
 #
-# O llama fica em b9802 (build CPU) enquanto os outros 8 apps da suíte estão em
-# b10066 (Vulkan) — builds diferentes de propósito: aqui o alvo é CPU. Está
-# fixo, que é o que importa; sincronizar as versões é decisão à parte.
+# O llama aqui é o build **CPU** (o alvo deste app), enquanto os outros 8 da
+# suíte usam o **Vulkan** — builds diferentes de propósito. A VERSÃO, porém, é a
+# mesma desde 2026-07-18 (b10066): eram duas versões pra acompanhar sem que
+# houvesse motivo, e o João decidiu sincronizar. Ao subir, subir os dois lados.
 #
 # PRA ATUALIZAR: trocar a versão abaixo, baixar o artefato, rodar `sha256sum` e
 # trocar o hash ao lado. Versão nova com hash velho = build falha, que é o certo.
@@ -53,9 +54,9 @@ env:
   CODELLDB_SHA_WIN: "aa3f45175da3850973632fef1a1af0ed2382866bfd3dcd836544973831388a25"
   CODELLDB_SHA_LINUX: "b85b45a8570051d535b0927c6c9da11c39f3a056c73559064647faf7f37f637d"
 
-  LLAMA_VERSION: "b9802"
-  LLAMA_SHA_WIN: "d55a7ab5036f305476c97d7b2ead0a9806d5e85b6486dfcf86bda25e40c6e442"
-  LLAMA_SHA_LINUX: "7d5ad336796b835d78ff1b1663af27a91f5ebcdcbc0923aa11878996fb473a15"
+  LLAMA_VERSION: "b10066"
+  LLAMA_SHA_WIN: "c4edaaf7f06652e57dd5cf302e719bbc761117e823b6bb3fa34b89945fb32b5f"
+  LLAMA_SHA_LINUX: "8387ddb55db54ea0b12e38182b73284df6b0d1b847f3d53e6111c2102c5da331"
 
   PY_VERSION: "3.12.9"
   PY_SHA_WIN: "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865"
