@@ -4,9 +4,14 @@ name: CI
 # passava por compilador nenhum: erro de tipo ou código que só compila no
 # Windows só aparecia na hora do release, com a tag já criada.
 #
-# Este job NÃO baixa os sidecars (rust-analyzer, gopls, Dart SDK, llama):
-# `cargo check` e `cargo test` não precisam deles — só o bundle precisa, e
-# bundle é trabalho do build.yml.
+# Este job NÃO baixa os sidecars (rust-analyzer, gopls, Dart SDK, llama) —
+# são centenas de MB e o que interessa aqui é compilar, não empacotar.
+#
+# Mas eles não podem simplesmente faltar: o build script do Tauri VALIDA os
+# globs de `bundle.resources` já no `cargo check`, e um glob que não casa com
+# nada é erro fatal ("glob pattern ... path not found"), não aviso. Medido na
+# primeira execução deste workflow. Por isso os dois caminhos ganham um arquivo
+# de mentira só pra fazer o glob casar.
 
 on:
   push:
@@ -44,6 +49,14 @@ jobs:
             patchelf \
             libssl-dev \
             build-essential
+
+      - name: Sidecars de mentira (só pros globs do bundle casarem)
+        run: |
+          mkdir -p src-tauri/binaries/llama src-tauri/lsp-packages
+          echo "placeholder do CI — os binarios reais vem no build.yml" \
+            > src-tauri/binaries/llama/CI-PLACEHOLDER.txt
+          echo "placeholder do CI — os binarios reais vem no build.yml" \
+            > src-tauri/lsp-packages/CI-PLACEHOLDER.txt
 
       - name: Install JS deps
         run: npm ci
