@@ -13,9 +13,16 @@ export function dirname(path: string): string {
 }
 
 export function joinPath(...parts: string[]): string {
-  return parts.map((p, i) => {
+  const cleaned = parts.map((p, i) => {
     const s = p.replace(/\\/g, "/");
     if (i === 0) return s.replace(/\/+$/, "");
     return s.replace(/^\/+|\/+$/g, "");
-  }).filter(Boolean).join("/");
+  });
+  // A raiz Unix é o caso que o trim acima destrói: "/" fica "" e o
+  // `filter(Boolean)` a descarta, então o resultado sai RELATIVO. Renomear um
+  // arquivo na raiz (`dirname("/a.txt")` = "/") gravava em `novo.txt` — o
+  // arquivo ia parar no cwd do processo, calado. Só morde no Linux: no Windows
+  // a raiz é "C:/", que sobrevive ao trim.
+  const raiz = cleaned[0] === "" && parts[0]?.replace(/\\/g, "/").startsWith("/") ? "/" : "";
+  return raiz + cleaned.filter(Boolean).join("/");
 }
