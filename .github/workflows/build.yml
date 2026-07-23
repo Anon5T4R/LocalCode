@@ -374,7 +374,7 @@ jobs:
 
     steps:
       - name: Baixar os instaladores
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: instalador-*
           path: dist
