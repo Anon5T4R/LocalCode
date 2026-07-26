@@ -335,6 +335,15 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
+      # O AppImage sai do runner carregando libs do Ubuntu que precisam vir do
+      # HOST (libwayland/GL) e um runtime que pede libfuse.so.2. Em Arch/Fedora
+      # isso vira janela BRANCA (EGL_BAD_PARAMETER) ou app que nao abre — bugs
+      # que o CI nunca ve, porque o CI e justamente a distro onde funciona.
+      # Ver Anon5T4R/linux-packaging.
+      - name: Consertar o AppImage para outras distros
+        uses: Anon5T4R/linux-packaging/fix-appimage@v1
+        with:
+          path: src-tauri/target/release/bundle/appimage
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
