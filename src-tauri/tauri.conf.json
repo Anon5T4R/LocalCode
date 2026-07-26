@@ -41,6 +41,11 @@
         "installerIcon": "icons/icon.ico"
       }
     },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "desktop-entry.desktop"
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["js", "ts", "tsx", "jsx", "rs", "json", "md", "html", "css", "toml", "yaml", "yml"],
