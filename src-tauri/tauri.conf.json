@@ -47,7 +47,7 @@
         "name": "Código",
         "description": "Arquivo de código do LocalCode",
         "role": "Editor",
-        "mimeType": "text/javascript,text/typescript,text/jsx,text/rust,application/json,text/markdown,text/html,text/css,application/toml,application/yaml"
+        "mimeType": "text/javascript;text/typescript;text/jsx;text/rust;application/json;text/markdown;text/html;text/css;application/toml;application/yaml"
       }
     ]
   }
