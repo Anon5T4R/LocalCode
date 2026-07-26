@@ -54,6 +54,8 @@
   --side-panel-width: 300px;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, monospace;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: dark;
 }
 
 /* ---- Light theme ---- */
@@ -84,6 +86,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #c0c0c0;
   --scrollbar-hover: #a8a8a8;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: light;
 }
 
 /* ---- High contrast theme ---- */
@@ -113,6 +117,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #6fc3df;
   --scrollbar-hover: #9fd8ef;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: dark;
 }
 
 /* ---- Nature (light) ---- */
@@ -143,6 +149,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #c9d4c2;
   --scrollbar-hover: #b0bfa8;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: light;
 }
 
 /* ---- Dark blue (dark) ---- */
@@ -170,6 +178,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #2c4166;
   --scrollbar-hover: #3d5680;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: dark;
 }
 
 /* ---- Calm green (light) ---- */
@@ -196,6 +206,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #c5d3c2;
   --scrollbar-hover: #aabfa7;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: light;
 }
 
 /* ---- Pastel pink (light) ---- */
@@ -222,6 +234,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #eecad9;
   --scrollbar-hover: #e2adc3;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: light;
 }
 
 /* ---- PunkPrincess (dark) ---- */
@@ -253,6 +267,8 @@
   --scrollbar-bg: transparent;
   --scrollbar-thumb: #3d2652;
   --scrollbar-hover: #56356f;
+  /* <select> no Linux: sem isto o GTK pinta o texto com a cor dele. */
+  color-scheme: dark;
 }
 
 * {

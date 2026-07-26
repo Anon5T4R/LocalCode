@@ -330,8 +330,8 @@ jobs:
           sudo cp -a llama-extract/*/lib*.so* /usr/local/lib/
           sudo ldconfig
 
-      - name: Build AppImage
-        run: npm run tauri build -- --bundles appimage
+      - name: Build AppImage e .deb
+        run: npm run tauri build -- --bundles appimage,deb
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
@@ -345,18 +345,34 @@ jobs:
         with:
           path: src-tauri/target/release/bundle/appimage
 
+      # Pacote nativo do pacman, reempacotado do .deb. O Hub prefere este asset
+      # ao AppImage quando a maquina tem pacman.
+      - name: Empacotar para o Arch (.pkg.tar.zst)
+        if: runner.os == 'Linux'
+        uses: Anon5T4R/linux-packaging/arch-package@v1
+        with:
+          deb: src-tauri/target/release/bundle/deb
+          license: custom
+          description: 'Editor de codigo leve e rapido com IA local'
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: LocalCode-Linux
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            dist-arch/*.pkg.tar.zst
 
       - name: Guardar o instalador
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v6
         with:
           name: instalador-linux
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            dist-arch/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 7
 
