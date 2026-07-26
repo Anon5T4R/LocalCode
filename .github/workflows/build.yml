@@ -355,24 +355,39 @@ jobs:
           license: custom
           description: 'Editor de codigo leve e rapido com IA local'
 
+      # `path:` com varias linhas faz o upload-artifact preservar a arvore a partir
+      # do ancestral comum — e como `dist-arch/` e `src-tauri/...` nao compartilham
+      # prefixo, o ancestral vira a raiz do repo e os arquivos chegam ANINHADOS.
+      # O `publicar` faz `ls dist/*.AppImage` e nao acha nada. Achatar antes e o
+      # mesmo padrao que o resto da suite ja usa.
+      - name: Separar o instalador
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          encontrou=0
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage \
+                   src-tauri/target/release/bundle/deb/*.deb \
+                   dist-arch/*.pkg.tar.zst; do
+            [ -e "$f" ] || continue
+            cp "$f" dist-release/
+            echo "empacotado: $(basename "$f") ($(du -h "$f" | cut -f1))"
+            encontrou=1
+          done
+          [ "$encontrou" -eq 1 ] || { echo "::error::build terminou sem artefato Linux"; exit 1; }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: LocalCode-Linux
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            dist-arch/*.pkg.tar.zst
+          path: dist-release/*
 
       - name: Guardar o instalador
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v6
         with:
           name: instalador-linux
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            dist-arch/*.pkg.tar.zst
+          path: dist-release/*
           if-no-files-found: error
           retention-days: 7
 
