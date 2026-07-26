@@ -1,6 +1,6 @@
 [package]
 name = "code"
-version = "0.8.8"
+version = "0.8.9"
 description = "LocalCode - A lightweight, fast code editor"
 authors = ["you"]
 edition = "2021"
