@@ -4,6 +4,7 @@ version = "0.8.13"
 description = "LocalCode - A lightweight, fast code editor"
 authors = ["you"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "code_lib"
